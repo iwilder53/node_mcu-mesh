@@ -41,13 +41,7 @@ void sendMessage() {
 
 void receivedCallback( uint32_t from, String &msg ) {
  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
-if (msg=="LightON")
- {
-  digitalWrite(LED_BUILTIN, LOW);                                       // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
-  }
-  else{
-    digitalWrite(LED_BUILTIN, HIGH);
-    }
+ 
 }
 
 void newConnectionCallback(uint32_t nodeId) {
@@ -82,8 +76,7 @@ void setup() {
   userScheduler.addTask( taskSendMessage );
   taskSendMessage.enable();
   pinMode(A0, INPUT);                                                    // Define A0 pin as INPUT
-  pinMode(LED_BUILTIN, OUTPUT);                                          // Define LED_BUILTIN as OUTPUT
-  digitalWrite(LED_BUILTIN, HIGH);                                       // Initially the LED will be off
+                                        
   
   
 }
@@ -95,14 +88,9 @@ period=millis()/1000;                                                    // Func
  
   mesh.update();
 
-           //digitalWrite(LED_BUILTIN,LOW);                              // LED will be ON when node in not deepSleep mode                               
+              digitalWrite(LED_BUILTIN,LOW);                              // LED will be ON                                
   
- /* if (period>60)                                                         // When period will be > 60 seconds, deep sleep mode will be active
-  {
-     mesh.stop();
- ESP.deepSleep(300e6);                                                    // deepSleep mode will be active for 300*10^6 microseconds, i.e. for 300 seconds                                                   
- digitalWrite(LED_BUILTIN,HIGH); 
-  }*/
+ 
 }
 void delayReceivedCallback(uint32_t from, int32_t delay) {
   Serial.printf("Delay to node %u is %d us\n", from, delay);
