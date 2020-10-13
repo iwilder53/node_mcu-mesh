@@ -26,7 +26,7 @@
 
 // Add wi-fi credentials to connect with mqtt  broker
 #define   STATION_SSID     "Hetadatain_GF"                      // Enter Wi-Fi SSID (Your PC/Laptop should be connected to same network)
-#define   STATION_PASSWORD "hetadatain@123"                        // Enter Wi-Fi Password
+#define   STATION_PASSWORD "**********"                        // Enter Wi-Fi Password
 
 #define HOSTNAME "MQTT_Bridge"
 
