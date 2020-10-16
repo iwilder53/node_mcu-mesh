@@ -16,7 +16,7 @@ void postFileContent(const char * path );
 char txtLine[FILE_LINE_LENGTH];
 char postdata [FILE_LINE_LENGTH];
 bool readCondition = true;  // Has to be defined somewhere to trigger SD read
-
+String buffer;
  
 
 Scheduler userScheduler; // to control your personal task
@@ -37,30 +37,33 @@ Task taskSendMessage( TASK_SECOND * 4 , TASK_FOREVER, &sendMessage );   // Set t
 
 void sendMessage() {
  
-  String msg = " NODE no.1  ";                                       // You can write node name/no. here so that you may easily recognize it        
+  String msg = "NODE no.3"   ;                                       // You can write node name/no. here so that you may easily recognize it        
  // msg += mesh.getNodeId();                                              // Adding Node id in the msg
    msg += " Analog: " + String (analogRead(A0));                          // Adding  analog reading in the msg. You can also add other pin readings 
  // msg += " myFreeMemory: " + String(ESP.getFreeHeap());                 // Adding free memory of Nodemcu in the msg
   msg += "\n"; 
-  uint32_t target = 314262534; 
-   mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
+  uint32_t target = 314262122; 
+  mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
   Serial.println(msg);
   Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");
 
 
-  
+
+
+
 
   } 
 
 
- Task taskWriteToCard( TASK_SECOND * 4 , TASK_FOREVER, &writeToCard );
+ Task taskWriteToCard( TASK_SECOND *4 , TASK_FOREVER, &writeToCard );
 
  
  void writeToCard()
  { 
 
-  String msg = " NODE no.1  "; 
+  String msg = "From  sd "; 
    msg += " Analog: " + String (analogRead(A0)); 
+   msg += "\n";
    
     File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
 // if the file is available, write to it:
@@ -68,62 +71,21 @@ void sendMessage() {
     dataFile.println(msg);
     dataFile.close();
     // print to the serial port too:
-    Serial.println("to SD Card"); 
+     Serial.println("to SD Card"); 
     Serial.println(msg);
     Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");}
   // if the file isn't open, pop up an error:
   else {
-    Serial.println("error opening datalog.txt"); 
+    Serial.println("error opening  offlinelog.txt"); 
     }
   } 
 
   
-  Task taskLoggedData(TASK_SECOND * 5 , TASK_FOREVER, &loggedData );
+  Task taskLoggedData(TASK_SECOND * 30 , TASK_FOREVER , &loggedData );
 
  void loggedData(){ 
-
-//File file = SD.open(path);
-//#elif defined(ESP8266)
-  File file = SD.open("offlinelog.txt", FILE_READ); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
-//#endif
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    return;
-  }
-
-     String msg
-   String buffer;
-  uint8_t i = 0;
-
-   while (file.available()) {
-    buffer = file.readStringUntil('\n');
-    Serial.println(buffer); //Printing for debugging purpose         
-     
-      
-      msg = "loggeddata FROM NODE no.1  "; 
-      msg += buffer;
-      uint32_t target = 314262534; 
-      mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
-      
-      Serial.println(msg);
-  }
-
-/*
-  while (file.available()) {
-   Serial.write(file.read());
-   if (c == '\n') { //Checks forline break
-      txtLine[i] = '\0';
-      //Serial.print(F(" * "));
-      Serial.println(txtLine); //This is where you get one line of file at a time.*/
-     
-     
-       
-  file.close();
-  Serial.println(F("DONE Reading"));
-
-   file = SD.open("offlinelog.txt", FILE_WRITE);                          //deleting file after data is sent
-   file.close();
-  
+ 
+//
  
 
       
@@ -144,8 +106,9 @@ void manageTasks(){
            taskWriteToCard.disable();
             taskLoggedData.enable();
       }
-  
-  
+
+
+ 
   }
 
 
@@ -157,6 +120,42 @@ void receivedCallback( uint32_t from, String &msg ) {
 
 void newConnectionCallback(uint32_t nodeId) {
    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+   //File file = SD.open(path);
+//#elif defined(ESP8266)
+  File file = SD.open("offlinelog.txt", FILE_READ); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
+//#endif
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    
+    return;
+  }
+
+    // String logs;
+   String buffer;
+  uint8_t i = 0;
+
+ //  while (file.available())
+for (int i = 0; i <17 ; i++)   { 
+    buffer = file.readStringUntil('\n');
+   // Serial.println(buffer); //Printing for debugging purpose         
+     
+String msg  = " from sd";
+      msg += buffer; 
+     // msg += " loggeddata ";
+      uint32_t target = 314262122; 
+      mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
+      
+      Serial.println(msg);
+ 
+   }   
+  file.close();
+  Serial.println(F("DONE Reading"));
+//SD.remove(offlinelog.txt"); 
+   //file = SD.open("offlinelog.txt", FILE_WRITE);                          //deleting file after data is sent
+   //file.close();
+  
+ 
+  
 }
 
 void changedConnectionCallback() {
@@ -175,7 +174,7 @@ void setup() {
     
    Serial.println("Card failed, or not present");
      // don't do anything more:
-     while (1);
+     //while (1);
   }
   Serial.println("card initialized."); 
 
@@ -197,7 +196,7 @@ void setup() {
   userScheduler.addTask( taskSendMessage );
   userScheduler.addTask(taskWriteToCard);
    userScheduler.addTask(taskLoggedData);
-      userScheduler.addTask(taskManageTasks);
+  userScheduler.addTask(taskManageTasks);
 
   taskSendMessage.enable();
   //taskLoggedData.enable();
