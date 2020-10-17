@@ -37,7 +37,7 @@ Task taskSendMessage( TASK_SECOND * 4 , TASK_FOREVER, &sendMessage );   // Set t
 
 void sendMessage() {
  
-  String msg = "NODE no.3"   ;                                       // You can write node name/no. here so that you may easily recognize it        
+  String msg = "NODE no.6"   ;                                       // You can write node name/no. here so that you may easily recognize it        
  // msg += mesh.getNodeId();                                              // Adding Node id in the msg
    msg += " Analog: " + String (analogRead(A0));                          // Adding  analog reading in the msg. You can also add other pin readings 
  // msg += " myFreeMemory: " + String(ESP.getFreeHeap());                 // Adding free memory of Nodemcu in the msg
@@ -63,7 +63,7 @@ void sendMessage() {
 
   String msg = "From  sd "; 
    msg += " Analog: " + String (analogRead(A0)); 
-   msg += "\n";
+   //msg += "\n";
    
     File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
 // if the file is available, write to it:
@@ -135,7 +135,7 @@ void newConnectionCallback(uint32_t nodeId) {
   uint8_t i = 0;
 
  //  while (file.available())
-for (int i = 0; i <17 ; i++)   { 
+for (int i = 0; i < 20 ; i++)   { 
     buffer = file.readStringUntil('\n');
    // Serial.println(buffer); //Printing for debugging purpose         
      
