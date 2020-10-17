@@ -8,7 +8,11 @@ from datetime import datetime
  # The callback for when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))#Print result of connection attempt
-    client.subscribe("painlessMesh/from/+")    # Subscribe all msg having topic "painlessMesh/from/"                       
+    client.subscribe("painlessMesh/from/+")    # Subscribe all msg having topic "painlessMesh/from/"   
+    
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        print("Unexpected disconnection.")                    
 
 filename= "filename.txt"
 
@@ -23,5 +27,5 @@ def on_message(client, userdata, msg):
 client = mqtt.Client()  # Create instance of client with client ID “digi_mqtt_test”
 client.on_connect = on_connect  # Define callback function for successful connection
 client.on_message = on_message  # Define callback function for receipt of a message
-client.connect("192.168.31.225", 1883, 100)  #*****
+client.connect("192.168.31.7", 3124, 100)  #*****
 client.loop_forever() 
