@@ -30,19 +30,19 @@ void writeToCard() ;
  void loggedData();
 void manageTasks();
 
-Task taskSendMessage( TASK_SECOND * 4 , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval (Here interval is 4 second)
+Task taskSendMessage( TASK_MINUTE * 2 , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval (Here interval is 4 second)
 
 
 // If you want to receive sensor readings from this node, write code in below function....
 
 void sendMessage() {
  
-  String msg = "NODE no.6"   ;                                       // You can write node name/no. here so that you may easily recognize it        
- // msg += mesh.getNodeId();                                              // Adding Node id in the msg
+  String msg = "NODE no.7"   ;                                       // You can write node name/no. here so that you may easily recognize it        
+ // msg += mesh.getNodeId);                                              // Adding Node id in the msg
    msg += " Analog: " + String (analogRead(A0));                          // Adding  analog reading in the msg. You can also add other pin readings 
  // msg += " myFreeMemory: " + String(ESP.getFreeHeap());                 // Adding free memory of Nodemcu in the msg
   msg += "\n"; 
-  uint32_t target = 314262122; 
+  uint32_t target = 2137585097; 
   mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
   Serial.println(msg);
   Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");
@@ -55,15 +55,16 @@ void sendMessage() {
   } 
 
 
- Task taskWriteToCard( TASK_SECOND *4 , TASK_FOREVER, &writeToCard );
+ Task taskWriteToCard( TASK_MINUTE *2 , TASK_FOREVER, &writeToCard );
 
  
  void writeToCard()
  { 
 
-  String msg = "From  sd "; 
-   msg += " Analog: " + String (analogRead(A0)); 
-   //msg += "\n";
+String msg = "NODE no.7"   ;     
+       msg += " Analog: " + String (analogRead(A0)); 
+       msg += "  offlinelog"; 
+
    
     File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
 // if the file is available, write to it:
@@ -139,17 +140,19 @@ for (int i = 0; i < 20 ; i++)   {
     buffer = file.readStringUntil('\n');
    // Serial.println(buffer); //Printing for debugging purpose         
      
-String msg  = " from sd";
-      msg += buffer; 
+ 
+ 
+  String   msg = buffer; 
      // msg += " loggeddata ";
-      uint32_t target = 314262122; 
+      uint32_t target = 2137585097; 
       mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
       
-      Serial.println(msg);
+      Serial.println(msg); 
  
    }   
   file.close();
   Serial.println(F("DONE Reading"));
+  SD.remove("offlinelog.txt");
 //SD.remove(offlinelog.txt"); 
    //file = SD.open("offlinelog.txt", FILE_WRITE);                          //deleting file after data is sent
    //file.close();
