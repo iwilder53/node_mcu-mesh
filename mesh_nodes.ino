@@ -17,7 +17,8 @@ char txtLine[FILE_LINE_LENGTH];
 char postdata [FILE_LINE_LENGTH];
 bool readCondition = true;  // Has to be defined somewhere to trigger SD read
 String buffer;
- 
+
+ int LED = 5;
 
 Scheduler userScheduler; // to control your personal task
  painlessMesh  mesh;
@@ -36,8 +37,9 @@ Task taskSendMessage( TASK_MINUTE * 2 , TASK_FOREVER, &sendMessage );   // Set t
 // If you want to receive sensor readings from this node, write code in below function....
 
 void sendMessage() {
+
  
-  String msg = "NODE no.1"   ;                                       // You can write node name/no. here so that you may easily recognize it        
+  String msg = "NODE no.x"   ;                                       // You can write node name/no. here so that you may easily recognize it        
  // msg += mesh.getNodeId);                                              // Adding Node id in the msg
    msg += " Analog: " + String (analogRead(A0));                          // Adding  analog reading in the msg. You can also add other pin readings 
  // msg += " myFreeMemory: " + String(ESP.getFreeHeap());                 // Adding free memory of Nodemcu in the msg
@@ -61,7 +63,8 @@ void sendMessage() {
  void writeToCard()
  { 
 
-String msg = "NODE no.1"   ;     
+
+String msg = "NODE no.x"   ;     
        msg += " Analog: " + String (analogRead(A0)); 
        msg += "  offlinelog"; 
 
@@ -85,7 +88,8 @@ String msg = "NODE no.1"   ;
   Task taskLoggedData(TASK_SECOND * 3 , TASK_FOREVER , &loggedData );
 
  void loggedData(){ 
- 
+
+
 /*
   File file = SD.open("offlinelog.txt", FILE_READ); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
 //#endif
@@ -129,18 +133,21 @@ String msg = "NODE no.1"   ;
  
 
 
- Task taskManageTasks( TASK_SECOND * 4 , TASK_FOREVER, &manageTasks );
+ Task taskManageTasks( TASK_MINUTE * 3 , TASK_FOREVER, &manageTasks );
 
 void manageTasks(){
   
   
    if( (WiFi.RSSI()) == 31 ){
      taskWriteToCard.enable();
-      digitalWrite(LED_BUILTIN,LOW);                              // LED will be ON when node is writibng to sd card                                
+         digitalWrite(LED, LOW);   
+
      }  else {
 
            taskWriteToCard.disable();
             taskLoggedData.enable();
+              //   digitalWrite(LED, HIGH);   
+
       }
 
 
@@ -244,8 +251,10 @@ void setup() {
   //taskLoggedData.enable();
 taskManageTasks.enable();
   
-  pinMode(A0, INPUT);                                                    // Define A0 pin as INPUT
- 
+  pinMode(A0, INPUT);   // Define A0 pin as INPUT
+
+                           // LED will be ON when node is writibng to sd card                                
+
 
      
  
@@ -255,22 +264,14 @@ taskManageTasks.enable();
 }
 
 void loop() {
+   
+
+  
   // it will run the user scheduler as well
 
-period=millis()/1000;                                                    // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
  
   mesh.update();
- //Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
 
- 
- 
-  
- /* if (period>60)                                                         // When period will be > 60 seconds, deep sleep mode will be active
-  {
-     mesh.stop();
- ESP.deepSleep(300e6);                                                    // deepSleep mode will be active for 300*10^6 microseconds, i.e. for 300 seconds                                                   
- digitalWrite(LED_BUILTIN,HIGH); 
-  }*/
 }
 void delayReceivedCallback(uint32_t from, int32_t delay) {
   Serial.printf("Delay to node %u is %d us\n", from, delay);
