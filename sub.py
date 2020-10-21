@@ -8,8 +8,11 @@ from datetime import datetime
  # The callback for when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))#Print result of connection attempt
-    client.subscribe("hetadatainMesh/from/+")    # Subscribe all msg having topic "painlessMesh/from/"   
-    
+    client.subscribe("hetadatainMesh/from/+")    # Subscribe all msg having topic "painlessMesh/from/"
+   
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        print("Unexpected disconnection.")    
 
 filename= "filename.txt"
 
