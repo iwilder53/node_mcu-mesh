@@ -26,6 +26,7 @@ def on_message(client, userdata, msg):
 
 client = mqtt.Client()  # Create instance of client with client ID “digi_mqtt_test”
 client.on_connect = on_connect  # Define callback function for successful connection
+client.on_disconnect = on_disconnect # Define callback function for disconnection
 client.on_message = on_message  # Define callback function for receipt of a message
 client.connect("192.168.31.7", 1883, 100)  #*****
 client.loop_forever() 
