@@ -1,3 +1,5 @@
+//#include <NTPClient.h>
+
 #include <ModbusMaster.h>
 
 #include <SD.h> 
@@ -5,13 +7,24 @@
 //#include <easyMesh.h>
  #include "painlessMesh.h"
 #include <SPI.h>
-
+//#include <WiFiUdp.h>
+#include <MCP3008.h>
+ 
+//define pin connections
+#define CS_PIN D8
+#define CLOCK_PIN D5
+#define MOSI_PIN D7
+#define MISO_PIN D6
  
 
+String id = "1";
 
 #define   MESH_PREFIX     "HetaDatain"                         // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
 #define   MESH_PASSWORD   "Test@Run_1"                         // Mesh Password should be same for all  nodes in Mesh Network
 #define   MESH_PORT       5555                                      // Mesh Port should be same for all  nodes in Mesh Network 
+  
+//String mesh_prefix;
+//String mesh_pasword;
 
 // function declaration
 void postFileContent(const char * path );
@@ -22,61 +35,143 @@ char postdata [FILE_LINE_LENGTH];
 bool readCondition = true;  // Has to be defined somewhere to trigger SD read
 String buffer;
 int a[70],b[70]; // We can change these to 16 bit to theorotically halve the memory space
+uint32_t root = 314262534; 
+unsigned long currentMillis = millis();
+long interval = 1000;   
+unsigned long period=0;  
+        
 
+String formattedDate;
+String dayStamp;
+String timeStamp;
 
- int LED = 5;
+bool ackStatus = false ;
+
+int LED = 5;
+
+uint32_t timeIndex = 0;
+uint16_t val, val1, val2, val3;
+
 ModbusMaster node;
 Scheduler userScheduler; // to control your personal task
- painlessMesh  mesh;
-//easyMesh mesh
-unsigned long period=0;  
+painlessMesh  mesh;
+//WiFiUDP ntpUDP;// Define NTP Client to get time
+//NTPClient timeClient(ntpUDP);
 
 // User stub
 void sendMessage() ; // Prototype so PlatformIO doesn't complain
 void writeToCard() ;
- void loggedData();
+void loggedData();
 void manageTasks();
- void buildDataStream() ;
+void buildDataStream() ;
+//void getTimeStamp();
+
+//Task taskGetTimeStamp( TASK_MINUTE * 2 , TASK_FOREVER, &getTimeStamp );   // Set task second to send msg in a time interval
+
 
 Task taskSendMessage( TASK_MINUTE * 2 , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval
 
 
-// If you want to receive sensor readings from this node, write code in below function....
 
 void sendMessage() {
 
-  String msg = "x4"   ;                                       // You can write node name/no. here so that you may easily recognize it        
- // msg += mesh.getNodeId);                                              // Adding Node id in the msg
-   msg += "," + String (analogRead(A0));                          // Adding  analog reading in the msg. You can also add other pin readings 
- //msg += " myFreeMemory: " + String(ESP.getFreeHeap());                 // Adding free memory of Nodemcu in the msg
-  msg += ","  + String(readVyb()) ; 
- // msg +=  "," + String(readWattage());
-  msg += ","  + String(readLineVoltage()) ; 
-  //msg += ","  + String(readPf()) ; 
-  uint32_t target = 314262534; 
-  mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
- Serial.println(msg);
-  Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");
+
+MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
+digitalWrite(CS_PIN,LOW);    
+
+   val = adc.readADC(0);
+  Serial.println(val);
+  
+   val1 = adc.readADC(3);
+  Serial.println(val1);
+
+  
+   val2 = adc.readADC(2); 
+  Serial.println(val2);
+
+   val3 = adc.readADC(2);
+  Serial.println(val3);
+   digitalWrite(CS_PIN,HIGH);
+/*
+                
+  int i=100,j=0;
+  while(i<160)
+  {
+    int result =  node.readHoldingRegisters(i, 2);
+    a[j] =node.getResponseBuffer(0);
+    b[j] =node.getResponseBuffer(1);
+    i=i+2;
+    j++;
+  }
+*/
+
+mesh.sendSingle(root, String("online?"));                             //ping to root node
+ackStatus = false;
+long previousMillis = 0;  
+unsigned long currentMillis = millis();
+
+
+ if(currentMillis - previousMillis > interval) {
+   // previousMillis = currentMillis;   
+ while (ackStatus = false)
+ {
+      
+      Serial.print("root not found, writing to card");
+  
+       String msg = id;     
+       msg += "," + String (val); 
+              msg += "," + String (val1); 
+                     msg += "," + String (val2);
+                            msg += "," + String (val3); 
+                                    msg += "  offlinelog";
+                                          msg += String(timeIndex);
+
+
+      digitalWrite(D4,LOW);    
+      SD.begin(D4);
+      File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
+
+  if (dataFile) {
+    dataFile.println(msg);
+    dataFile.close();
+    // print to the serial port too:
+      Serial.println("to SD Card"); 
+      Serial.println(msg);
+  }
+  else {
+    Serial.println("error opening  offlinelog.txt"); 
+    }
+  }
+  SD.end(D4);
+      digitalWrite(D4, HIGH);
+  }
 
  node.clearResponseBuffer();
 
 
   } 
- Task dataStream( TASK_SECOND * 90 , TASK_FOREVER, &buildDataStream);
+ Task dataStream( TASK_SECOND * 120 , TASK_FOREVER, &buildDataStream);
 
 
- Task taskWriteToCard( TASK_MINUTE *2 , TASK_FOREVER, &writeToCard );
+ Task taskWriteToCard( TASK_MINUTE * 2 , TASK_FOREVER, &writeToCard );
 
  
  void writeToCard()
  { 
 
 
-String msg = "NODE no.x"   ;     
-       msg += " Analog: " + String (analogRead(A0)); 
-       msg += "  offlinelog"; 
+ String msg = id;     
+       msg += "," + String (val); 
+              msg += "," + String (val1); 
+                     msg += "," + String (val2);
+                            msg += "," + String (val3); 
+                                    msg += "  offlinelog"; 
+                                          msg += String(timeIndex);
 
-   
+
+       
+      digitalWrite(D4,LOW);    
+      SD.begin(D4);
     File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
 // if the file is available, write to it:
   if (dataFile) {
@@ -90,6 +185,9 @@ String msg = "NODE no.x"   ;
   else {
     Serial.println("error opening  offlinelog.txt"); 
     }
+    timeIndex++;
+    SD.end(D4);
+      digitalWrite(D4, HIGH);
   } 
 
   
@@ -141,7 +239,7 @@ String msg = "NODE no.x"   ;
  
 
 
- Task taskManageTasks( TASK_MINUTE * 3 , TASK_FOREVER, &manageTasks );
+ Task taskManageTasks( TASK_MINUTE * 2 , TASK_FOREVER, &manageTasks );
 
 void manageTasks(){
   
@@ -166,12 +264,38 @@ void manageTasks(){
 
 void receivedCallback( uint32_t from, String &msg ) {
  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
+
+ if(msg == "online"){
+  Serial.print("got ack, root online");
+  
+
+       String msg = id;     
+       msg += "," + String (val); 
+              msg += "," + String (val1); 
+                     msg += "," + String (val2);
+                            msg += "," + String (val3); 
+   
+   
+   
+   //msg += " myFreeMemory: " + String(ESP.getFreeHeap());                 // Adding free memory of Nodemcu in the msg
+ // msg += ","  + String(readFreq()) ; 
+ // msg +=  "," + String(readWattage());
+  //msg +=  "," + String(readCurrent());
+  //msg += ","  + String(readLineVoltage()) ; 
+  //msg += ","  + String(readPf()) ; 
+  //uint32_t target = 314262534; 
+  mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
+ Serial.println(msg);
+ ackStatus = true;
+ }
  
 }
 
 void newConnectionCallback(uint32_t nodeId) {
    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
-
+  
+      digitalWrite(D4,LOW);    
+      SD.begin(D4);
   File file = SD.open("offlinelog.txt", FILE_READ); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
 //#endif
   if (!file) {
@@ -184,35 +308,24 @@ void newConnectionCallback(uint32_t nodeId) {
    String buffer;
   uint8_t i = 0;
 
-while (file.available())
+   
+
+//while (file.available())
 //  while (buffer != NULL())
-// for (int i = 0; i < 20 ; i++) 
-{ 
-    buffer = file.readStringUntil('\n');
-   // Serial.println(buffer); //Printing for debugging purpose         
-     
- 
- 
+ for (int i = 0; i < 20 ; i++) 
+{  
+   buffer = file.readStringUntil('\n');
+  
   String   msg = buffer; 
-     // msg += " loggeddata ";
-      uint32_t target = 842845767; 
-      mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
-      
-      Serial.println(msg); 
+  mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
  
 }   
- 
- 
+
   file.close();
   Serial.println(F("DONE Reading"));
   SD.remove("offlinelog.txt");
+ SD.end();
  
-//SD.remove(offlinelog.txt"); 
-   //file = SD.open("offlinelog.txt", FILE_WRITE);                          //deleting file after data is sent
-   //file.close();
-  
- 
-  
 }
 
 void changedConnectionCallback() {
@@ -224,20 +337,20 @@ void nodeTimeAdjustedCallback(int32_t offset) {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(9600, SERIAL_8E1);
   node.begin(1, Serial);
-    
+
     //CHECK FOR SDCARD
-    if (!SD.begin(D8)) {
+    /*if (!SD.begin(D4)) {
     
    Serial.println("Card failed, or not present");
      // don't do anything more:
-     //while (1);
   }
-  Serial.println("card initialized."); 
+  Serial.println("card initialized.");
+ */
 
   // mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
-  mesh.setDebugMsgTypes( ERROR | DEBUG | CONNECTION);  // set before init() so that you can see startup messages
+  //mesh.setDebugMsgTypes( ERROR | DEBUG | CONNECTION);  // set before init() so that you can see startup messages
 
   mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT );
   //mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
@@ -256,15 +369,17 @@ void setup() {
    userScheduler.addTask(taskLoggedData);
   userScheduler.addTask(taskManageTasks);
   userScheduler.addTask(dataStream);
+  //userScheduler.addTask(taskGetTimeStamp);
 
   taskSendMessage.enable();
   //taskLoggedData.enable();
 taskManageTasks.enable();
-  dataStream.enable();
+//taskGetTimeStamp.enable();
   pinMode(A0, INPUT);   // Define A0 pin as INPUT
  pinMode(LED, OUTPUT);
 
                            // LED will be ON when node is writibng to sd card                                
+// dataStream.enable();
 
 
      
@@ -494,6 +609,29 @@ return Current;
  return WHour;
     }
     double readVyb(){
-        double Vyb = RSmeter(a[20], b[20]);
+        double Vyb = RSmeter(a[24], b[24]);
  return Vyb;
     }
+    double readFreq(){
+        double freq = RSmeter(a[29], b[29]);
+ return freq;
+    }
+/*
+void getTimeStamp() {
+  while(!timeClient.update()) {
+    timeClient.forceUpdate();
+  }
+  // The formattedDate comes with the following format:
+  // 2018-05-28T16:00:13Z
+  // We need to extract date and time
+  formattedDate = timeClient.getFormattedDate();
+  Serial.println(formattedDate);
+
+  // Extract date
+  int splitT = formattedDate.indexOf("T");
+  dayStamp = formattedDate.substring(0, splitT);
+  Serial.println(dayStamp);
+  // Extract time
+  timeStamp = formattedDate.substring(splitT+1, formattedDate.length()-1);
+  Serial.println(timeStamp);
+}*/
