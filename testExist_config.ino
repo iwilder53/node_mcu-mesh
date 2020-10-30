@@ -1,6 +1,5 @@
 #include <ModbusMaster.h>
-#include <SD.h> 
-//#include <easyMesh.h>
+#include <SD.h>  
 #include "painlessMesh.h"
 #include <SPI.h>
 
@@ -12,61 +11,44 @@
 
 
 void readConfig() {
-
-  File file = SD.open("config.txt", FILE_READ);
-
-  if(MESH_PREFIX)
- {
-    String MESH_PREFIX = "";                        
- }
-else
- {
-    Serial.println("Error reading Mesh_Prefix");
- }
-
-if(MESH_PASSWORD)
- {
-    String MESH_PASSWORD = "";                        
- }
-else
- {
-    Serial.println("Error reading Mesh_Password");
- }
-
- if(MESH_PORT)
- {
-    uint8_t MESH_PORT = 0;                        
- }
-else
- {
-    Serial.println("Error reading Mesh_Port");
- }
-
- if(Node_ID)
- {
-    uint8_t Node_ID = 0;                        
- }
-else
- {
-    Serial.println("Error reading Node_ID");
- }
-
-if(MFD_No)
- {
-    uint8_t MFD_No = 0;                        
- }
-else
- {
-    Serial.println("Error reading MFD_No");
- }
- 
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    
+  Serial.println("Initializing SD card...");
+  char temp;
+  bool isSetting = true;
+  if (!SD.begin(4)) {
+    Serial.println("Initialization failed!");
     return;
   }
+  Serial.println("Initialization done.");
+File  myFile = SD.open("config.txt");
+  if (myFile) {
+    Serial.println("config.txt");
+    while (myFile.available()) {
+      temp = myFile.read();
+      if (isSetting == true) {
+        if (temp == '=') {
+          Serial.print("="); //Writes '=' to console
+          isSetting  = false;
+        }
+        else {
+          Serial.print(temp); //Writes SETTING part to console
+        }
+      }
+      else {
+        if (temp == '\n' || temp == '\r') {
+          isSetting = true;
+          }
+        else {
+          Serial.print(temp); //Writes VALUE part to console
+          }
+        }
+    }
+    myFile.close();
+  } else {
+    Serial.println("Can't open config.txt");
+  }
 }
-    
+
+
 // function declaration
 void postFileContent(const char * path );
 
@@ -289,6 +271,8 @@ void setup() {
      //while (1);
   }
   Serial.println("card initialized."); 
+
+  readConfig();
 
   // mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
   mesh.setDebugMsgTypes( ERROR | DEBUG | CONNECTION);  // set before init() so that you can see startup messages
