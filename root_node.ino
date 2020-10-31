@@ -1,19 +1,4 @@
-//************************************************************
-
-// this is a simple example that uses the painlessMesh library to connect to a another network and relay messages from a
-// MQTT broker to the nodes of the mesh network. It acts as bridge between mesh network and mqtt broker.
-// To send a message to a mesh node, you can publish it to "painlessMesh/to/12345678" where 12345678 equals the nodeId.
-// To broadcast a message to all nodes in the mesh you can publish it to "painlessMesh/to/broadcast".
-// When you publish "getNodes" to "painlessMesh/to/gateway" you receive the mesh topology as JSON
-// Every message from the mesh which is send to the gateway node will be published to "painlessMesh/from/12345678" where 12345678 
-// is the nodeId from which the packet was send.
-
-
-// To know Node id, Upload code to Nodemcu, Open Serial Monitor and Press RST button on Nodemcu.
-// Enter wi-fi ssid and wi-fi password in line 24 and 25 respectively.
-// Enter local ip address/mqtt broker server ip address in line 40.
-
-//************************************************************
+//This Code will only be utilised for root node.
 
 #include <Arduino.h>
 #include <painlessMesh.h>
@@ -27,35 +12,36 @@
 #endif
 #include <ESPAsyncWebServer.h>
 
-
+bool isConnected;
 
 
 AsyncWebServer server(80);
 
 
-#define   MESH_PREFIX     "HetaDatain"                  // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
-#define   MESH_PASSWORD   "Test@Run_1"                  // Mesh Password should be same for all  nodes in Mesh Network
-#define   MESH_PORT       5555                               // Mesh Port should be same for all  nodes in Mesh Network
-
+#define   MESH_PREFIX     "HetaDatain"                  
+#define   MESH_PASSWORD   "Test@Run_1"              
+#define   MESH_PORT       5555                               
 // Add wi-fi credentials to connect with mqtt  broker
-#define   STATION_SSID     "Hetadatain_GF"                      // Enter Wi-Fi SSID (Your PC/Laptop should be connected to same network)
-#define   STATION_PASSWORD "hetadatain@123"                        // Enter Wi-Fi Password
+#define   STATION_SSID     "Hetadatain_GF"                     
+#define   STATION_PASSWORD "hetadatain@123"               
 
 #define HOSTNAME "MQTT_Bridge"
 
 // Prototypes
 void receivedCallback( const uint32_t &from, const String &msg );
 void mqttCallback(char* topic, byte* payload, unsigned int length);
+void sendNmap();
 
 IPAddress getlocalIP();
 
 IPAddress myIP(0,0,0,0);
-IPAddress mqttBroker(192, 168, 31, 232);                     // Enter Local ip address of your PC/Laptop
+IPAddress mqttBroker(192, 168, 31, 35);                    
 
 painlessMesh  mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);               // 1883 is default port for mqtt broker.
-
+PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);    
+          
+Scheduler userScheduler;
 
 
 String scanprocessor(const String& var)
@@ -65,26 +51,40 @@ String scanprocessor(const String& var)
   return String();
 }
 
+Task taskSendNmap( TASK_MINUTE * 2 , TASK_FOREVER, &sendNmap );   // Set task second to send msg in a time interval
 
+  void sendNmap(){
+    Serial.print("sending tree");
+      String topic = "Nmap/from/gateway";
+     String nMap = mesh.asNodeTree().toString();
+ 
+ mqttClient.publish(topic.c_str(), nMap.c_str());
+    
+    }
 
 void setup() {
   Serial.begin(115200);
 
-  //mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE );                           // set before init() so that you can see startup messages
+ //mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE | GENERAL);                  
 
-  // Channel set to 6. Make sure to use the same channel for your mesh and for you other
-  // network (STATION_SSID)
-  mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 11 );
+ 
+  
+  mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
   mesh.onReceive(&receivedCallback);
-  Serial.print("Node id is: ");                                                   //To know Node id, Upload code to Nodemcu, Open Serial Monitor and Press RST button on Nodemcu
+  Serial.print("Node id is: ");                                                 
   Serial.println(mesh.getNodeId());
   mesh.stationManual(STATION_SSID, STATION_PASSWORD);
   mesh.setHostname(HOSTNAME);
 
-  // Bridge node, should (in most cases) be a root node. See [the wiki](https://gitlab.com/painlessMesh/painlessMesh/wikis/Possible-challenges-in-mesh-formation) for some background
-  mesh.setRoot(true);
-  // This node and all other nodes should ideally know the mesh contains a root, so call this on all nodes
-  mesh.setContainsRoot(true);
+   mesh.setRoot(true);
+ mesh.setContainsRoot(true);
+
+
+  userScheduler.addTask( taskSendNmap );
+
+  taskSendNmap.enable();
+
+ 
   
   //Async webserver
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -104,11 +104,14 @@ void setup() {
     {
     request->send(200, "application/json", mesh.subConnectionJson(false) );
     });
-  /*server.on("/asnodetree", HTTP_GET, [](AsyncWebServerRequest *request)
+  server.on("/asnodetree", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-    request->send(200, "text/html", mesh.asNodeTree().c_str() );
-    });*/
+    request->send(200, "text/html", mesh.asNodeTree().toString() );
+    });
   server.begin();
+
+
+  pinMode(LED_BUILTIN, OUTPUT);
 
  
   mesh.initOTAReceive("bridge");
@@ -120,25 +123,54 @@ void loop() {
 
   mqttClient.loop();
 
+
+if (myIP == getlocalIP())
+{isConnected = true;}
+
   if(myIP != getlocalIP()){
     myIP = getlocalIP();
     Serial.println("My IP is " + myIP.toString());
+    isConnected = true;
 
     if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
-      mqttClient.subscribe("hetadatainMesh/to/#");
+      mqttClient.publish("Nmap/from/gateway","Ready!");
+
+      mqttClient.subscribe("hetadatainMesh/to/+");
     } 
+
   }
+   
 }
 
 // Publish Received msg from nodes to mqtt broker
 void receivedCallback( const uint32_t &from, const String &msg ) {
- Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
+ //Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
+ 
+  
+  if(msg == "online?"){
+  // if(isConnected == true){
+    mesh.sendSingle(from, String("online"));
+    //  }
+    }
+  
+  else{
+    
   String topic = "hetadatainMesh/from/" + String(from);
  
   mqttClient.publish(topic.c_str(), msg.c_str());
-  Serial.println(mesh.asNodeTree().toString());                                   // Gives the mesh network tree structre
 
+
+String nMap = mesh.asNodeTree().toString();
+ Serial.print(mesh.asNodeTree().toString());
+ 
+ mqttClient.publish("Nmap/from/gateway", nMap.c_str());
+    isConnected = false;
+    }
+  
+  
+  
+                                   
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
@@ -176,9 +208,9 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     {
       mqttClient.publish("hetadatainMesh/from/gateway", "Client not connected!");
     }
-  }
+ 
   
-}
+}}
 
 IPAddress getlocalIP() {
   return IPAddress(mesh.getStationIP());
