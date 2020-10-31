@@ -16,7 +16,7 @@
 #define MOSI_PIN D7
 #define MISO_PIN D6
 
-#define sd_PIN D8
+#define sd_PIN D4
  
 //MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
 
@@ -35,21 +35,21 @@ void postFileContent(const char * path );
 #define FILE_LINE_LENGTH        81  // a line has 80 chars 
 char txtLine[FILE_LINE_LENGTH];
 char postdata [FILE_LINE_LENGTH];
-bool readCondition = true;  // Has to be defined somewhere to trigger SD read
+bool readCondition = true;  
 String buffer;
-int a[70],b[70]; // We can change these to 16 bit to theorotically halve the memory space
+int a[70],b[70];
 uint32_t root = 314262534; 
 unsigned long currentMillis = millis();
 long interval = 1000;   
 unsigned long period=0;  
 
-String id = "6";
+String id = "4";
 
 
 int LED = D0;
 int ledState = LOW;
 
-uint16_t val, val1, val2, val3;
+uint16_t val, val1, val2, val3, val4, val5, val6, val7 ;
 
 String formattedDate;
 String dayStamp;
@@ -57,8 +57,8 @@ String timeStamp;
 
 bool ackStatus = false ;
 
-uint8_t mfd = 1;
-uint8_t mcp = 0;
+uint8_t mfd = 0;
+uint8_t mcp = 1;
 
 uint32_t timeIndex = 0;
 
@@ -179,6 +179,14 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   Serial.println(val2);
   val3 = adc.readADC(3);
   Serial.println(val3);
+  val4 = adc.readADC(4);
+  Serial.println(val4);
+  val5 = adc.readADC(5);
+  Serial.println(val5);
+  val6 = adc.readADC(6); 
+  Serial.println(val6);
+  val7 = adc.readADC(7);
+  Serial.println(val7);
    digitalWrite(CS_PIN,HIGH);
 
 
@@ -199,7 +207,12 @@ unsigned long currentMillis = millis();
        msg += "," + String (val); 
               msg += "," + String (val1); 
                      msg += "," + String (val2);
-                            msg += "," + String (val3); 
+                            msg += "," + String (val3);
+                                      
+       msg += "," + String (val4); 
+              msg += "," + String (val5); 
+                     msg += "," + String (val6);
+                            msg += "," + String (val7);
                                     msg += "  offlinelog";
                                           msg += String(timeIndex);
 
@@ -238,35 +251,35 @@ unsigned long currentMillis = millis();
 MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   val = adc.readADC(0);
   Serial.println(val);
-  val1 = adc.readADC(3);
+  val1 = adc.readADC(1);
   Serial.println(val1);
   val2 = adc.readADC(2); 
   Serial.println(val2);
-  val3 = adc.readADC(2);
+  val3 = adc.readADC(3);
   Serial.println(val3);
+  val4 = adc.readADC(4);
+  Serial.println(val4);
+  val5 = adc.readADC(5);
+  Serial.println(val5);
+  val6 = adc.readADC(6); 
+  Serial.println(val6);
+  val7 = adc.readADC(7);
+  Serial.println(val7);
    digitalWrite(CS_PIN,HIGH);
 
-  
-String msg = id   ;     
-       msg +=  "," + String(readWattage());              //KW
-  msg += "," + String(readWattageY());                //wy
-  msg += "," + String(readWattageR());//WR
-  msg += "," + String(readWattageB());//WB
-  msg +=  "," + String(readCurrent());//Iavg
-  msg += ","  + String(readLineVoltage()) ; //Vll
-  msg += ","  + String(readPf()) ;//pf
-  msg += "," + String(readWH());//WH
-  msg += "," + String(readVa());//KVA
-    msg += "," + String(readVah());//VAH
 
-       String msg = id;     
+String msg = id;     
        msg += "," + String (val); 
               msg += "," + String (val1); 
                      msg += "," + String (val2);
-                            msg += "," + String (val3); 
-   
-       msg += "  offlinelog"; 
-       msg += String(timeIndex);
+                            msg += "," + String (val3);
+                                      
+       msg += "," + String (val4); 
+              msg += "," + String (val5); 
+                     msg += "," + String (val6);
+                            msg += "," + String (val7);
+                                   msg += "  offlinelog";
+                                          msg += String(timeIndex);
 
 
    digitalWrite(sd_PIN,LOW);    
@@ -305,6 +318,9 @@ String msg = id   ;
     msg += "," + String(readVah());//VAH
 
     
+                                    msg += "  offlinelog";
+                                          msg += String(timeIndex);
+
         
 
    digitalWrite(sd_PIN,LOW);    
@@ -395,11 +411,17 @@ void receivedCallback( uint32_t from, String &msg ) {
     ledState = HIGH;
 
 
+     
        String msg = id;     
        msg += "," + String (val); 
               msg += "," + String (val1); 
                      msg += "," + String (val2);
-                            msg += "," + String (val3); 
+                            msg += "," + String (val3);
+                                      
+       msg += "," + String (val4); 
+              msg += "," + String (val5); 
+                     msg += "," + String (val6);
+                            msg += "," + String (val7);
    
   mesh.sendSingle(root, msg );
  Serial.println(msg);
@@ -452,6 +474,9 @@ while (file.available())
  
   file.close();
   Serial.println(F("DONE Reading"));
+  String ackMsg = id ;
+  ackMsg += "sent from sd card";
+  mesh.sendSingle(root, ackMsg);
   SD.remove("offlinelog.txt");
       SD.end();
 
@@ -748,7 +773,7 @@ void buildDataStream()
     }
 double readLineVoltage(){
   
-   double VLL = RSmeter(a[16], b[16]);
+   double VLL = RSmeter(a[17], b[17]);
   return VLL;
   }
 double readCurrent(){
@@ -795,3 +820,4 @@ void getTimeStamp() {
   timeStamp = formattedDate.substring(splitT+1, formattedDate.length()-1);
   Serial.println(timeStamp);
 }*/
+
