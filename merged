@@ -47,7 +47,7 @@ String timeStamp;
 bool ackStatus = false ;
 
 uint8_t mfd = 1;
-uint8_t mcp = 0;
+uint8_t mcp = 1;
 
 uint32_t timeIndex = 0;
 
@@ -227,7 +227,18 @@ void receivedCallback( uint32_t from, String &msg ) {
 
  if(msg == "online"){
   Serial.print("got ack, root online");
-  if(mfd == 1){
+  if (mcp == 1 && mfd == 1 )
+  {
+    msgMfd = readMfd();
+    msgMcp = readMcp();
+    msg = msgMfd + msgMcp;
+
+    mesh.sendSingle(root, msg );
+    Serial.println(msg);
+    ackStatus = true;
+}
+
+ else if(mfd == 1){
     msgMfd = readMfd();
     mesh.sendSingle(root, msgMfd );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
     Serial.println(msgMfd);
@@ -241,6 +252,7 @@ void receivedCallback( uint32_t from, String &msg ) {
     ackStatus = true;
   
   }
+   
  
 }}
 
