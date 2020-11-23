@@ -1,93 +1,316 @@
-//************************************************************
-
-// this is a simple example that uses the painlessMesh library to connect to a another network and relay messages from a
-// MQTT broker to the nodes of the mesh network. It acts as bridge between mesh network and mqtt broker.
-// To send a message to a mesh node, you can publish it to "painlessMesh/to/12345678" where 12345678 equals the nodeId.
-// To broadcast a message to all nodes in the mesh you can publish it to "painlessMesh/to/broadcast".
-// When you publish "getNodes" to "painlessMesh/to/gateway" you receive the mesh topology as JSON
-// Every message from the mesh which is send to the gateway node will be published to "painlessMesh/from/12345678" where 12345678 
-// is the nodeId from which the packet was send.
-
-
-// To know Node id, Upload code to Nodemcu, Open Serial Monitor and Press RST button on Nodemcu.
-// Enter wi-fi ssid and wi-fi password in line 24 and 25 respectively.
-// Enter local ip address/mqtt broker server ip address in line 40.
-
-//************************************************************
+//This Code will only be utilised for root node.
+//#include "RTCDS1307.h"
+#include "RTClib.h"
 
 #include <Arduino.h>
 #include <painlessMesh.h>
 #include <PubSubClient.h>
 #include <WiFiClient.h>
+#ifdef ESP8266
+#include "Hash.h"
+#include <ESPAsyncTCP.h>
+#else
+#include <AsyncTCP.h>
+#endif
+#include <ESPAsyncWebServer.h>
+#include <FS.h>
+#include "SD.h"
+#include "SPI.h"
 
-#define   MESH_PREFIX     "HetaDatain"                  // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
-#define   MESH_PASSWORD   "Test@Run_1"                  // Mesh Password should be same for all  nodes in Mesh Network
-#define   MESH_PORT       5555                               // Mesh Port should be same for all  nodes in Mesh Network
+#define OTA_PART_SIZE 1024 //How many bytes to send per OTA data packet
 
+bool isConnected;
+
+
+AsyncWebServer server(80);
+
+
+#define   MESH_PREFIX     "HetaDatain"                  
+#define   MESH_PASSWORD   "Test@Run_1"              
+#define   MESH_PORT       5555                               
 // Add wi-fi credentials to connect with mqtt  broker
-#define   STATION_SSID     "Hetadatain_GF"                      // Enter Wi-Fi SSID (Your PC/Laptop should be connected to same network)
-#define   STATION_PASSWORD "**********"                        // Enter Wi-Fi Password
-
+#define   STATION_SSID     "Hetadatain_GF"                     
+#define   STATION_PASSWORD "hetadatain@123"               
+#define   STATION_SSID1     "Hetadatain_FF"                     
+#define   STATION_PASSWORD1 "hetadatain@123"
 #define HOSTNAME "MQTT_Bridge"
 
 // Prototypes
 void receivedCallback( const uint32_t &from, const String &msg );
 void mqttCallback(char* topic, byte* payload, unsigned int length);
+void sendNmap();
+void sendTime();
 
 IPAddress getlocalIP();
-
+IPAddress testIP(0,0,0,0);
 IPAddress myIP(0,0,0,0);
-IPAddress mqttBroker(192, 168, 31, 225);                     // Enter Local ip address of your PC/Laptop
+IPAddress mqttBroker(192, 168, 31, 35);     
+IPAddress mqttBroker_secondary(192, 168, 31, 35);                    
+
 
 painlessMesh  mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);               // 1883 is default port for mqtt broker.
+PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);    
+//PubSubClient nMapClient(mqttBroker, 1884, mqttCallback, wifiClient);              
+          
+Scheduler userScheduler;
+RTC_DS1307 rtc;
+
+uint8_t year, month, weekday, day, hour, minute, second;
+
+int period;
+
+String m[12] = {"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"};
+String w[7] = {"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"};
+
+Task taskSendTime( TASK_SECOND * 5 , TASK_FOREVER, &sendTime );   
+void sendTime()
+{ Serial.print("getting timeStamp");
+   
+    DateTime now = rtc.now();
+    Serial.print(now.unixtime() / 86400L);
+
+    String msg = String(now.unixtime() );
+  mesh.sendBroadcast(msg);
+  Serial.print(msg);
+
+ //String topic = "Nmap/from/gateway";
+ 
+ //mqttClient.publish(topic.c_str(), msg.c_str());
+  
+  }
+String scanprocessor(const String& var)
+{
+  if(var == "SCAN")
+    return mesh.subConnectionJson(false) ;
+  return String();
+}
+
+Task taskSendNmap( TASK_IMMEDIATE , TASK_ONCE, &sendNmap );   // Set task second to send msg in a time interval
+
+  void sendNmap(){
+    Serial.print("sending tree");
+      String topic = "hetadatainMesh/from/gateway";
+     String nMap = mesh.asNodeTree().toString();
+ 
+ mqttClient.publish(topic.c_str(), nMap.c_str());
+    
+    }
 
 void setup() {
   Serial.begin(115200);
+  rtc.begin();
+  //rtc.setDate(19, 2, 28);
+  //rtc.setTime(23, 59, 50);
 
-  mesh.setDebugMsgTypes( ERROR | STARTUP | CONNECTION );                           // set before init() so that you can see startup messages
+ mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE | GENERAL);                  
 
-  // Channel set to 6. Make sure to use the same channel for your mesh and for you other
-  // network (STATION_SSID)
+ 
+  
   mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
   mesh.onReceive(&receivedCallback);
-  Serial.print("Node id is: ");                                                   //To know Node id, Upload code to Nodemcu, Open Serial Monitor and Press RST button on Nodemcu
+  Serial.print("Node id is: ");                                                 
   Serial.println(mesh.getNodeId());
   mesh.stationManual(STATION_SSID, STATION_PASSWORD);
   mesh.setHostname(HOSTNAME);
 
-  // Bridge node, should (in most cases) be a root node. See [the wiki](https://gitlab.com/painlessMesh/painlessMesh/wikis/Possible-challenges-in-mesh-formation) for some background
-  mesh.setRoot(true);
-  // This node and all other nodes should ideally know the mesh contains a root, so call this on all nodes
-  mesh.setContainsRoot(true);
+   mesh.setRoot(true);
+ mesh.setContainsRoot(true);
+
+
+  userScheduler.addTask( taskSendNmap );
+  userScheduler.addTask(taskSendTime);
+  taskSendNmap.enable();
+  taskSendTime.enable();
   
+ 
   
+  //Async webserver
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+    request->send(200, "text/html", "<form>Text to Broadcast<br><input type='text' name='BROADCAST'><br><br><input type='submit' value='Submit'></form>");
+    if (request->hasArg("BROADCAST"))
+      {
+      String msg = request->arg("BROADCAST");
+      mesh.sendBroadcast(msg);
+      }
+    });
+  server.on("/map", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+    request->send_P(200, "text/html", "<html><head><script type='text/javascript' src='https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.js'></script><link href='https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis-network.min.css' rel='stylesheet' type='text/css' /><style type='text/css'>#mynetwork {width: 1024px;height: 768px;border: 1px solid lightgray;}</style></head><body><h1>PainlessMesh Network Map</h1><div id='mynetwork'></div><a href=https://visjs.org>Made with vis.js<img src='http://www.davidefabbri.net/files/visjs_logo.png' width=40 height=40></a><script>var txt = '%SCAN%';</script><script type='text/javascript' src='http://www.davidefabbri.net/files/painlessmeshmap.js'></script></body></html>", scanprocessor);
+    });
+  server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+    request->send(200, "application/json", mesh.subConnectionJson(false) );
+    });
+  server.on("/asnodetree", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+    request->send(200, "text/html", mesh.asNodeTree().toString() );
+    });
+  server.begin();
+
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+ /*
+
+if (!SD.begin(D8)) {
+    ("Could not mount SD card");
+  }
+
+  File dir = SD.open("/");
+  while (true) {
+    File entry = dir.openNextFile();
+    if (!entry) { //End of files
+      ("Could not find valid firmware, please validate and restart");
+    }
+
+    //This block of code parses the file name to make sure it is valid.
+    //It will also get the role and hardware the firmware is targeted at.
+    if (!entry.isDirectory()) {
+      TSTRING name = entry.name();
+      if (name.length() > 1 && name.indexOf('_') != -1 &&
+          name.indexOf('_') != name.lastIndexOf('_') &&
+          name.indexOf('.') != -1) {
+        TSTRING firmware = name.substring(1, name.indexOf('_'));
+        TSTRING hardware =
+            name.substring(name.indexOf('_') + 1, name.lastIndexOf('_'));
+        TSTRING role =
+            name.substring(name.lastIndexOf('_') + 1, name.indexOf('.'));
+        TSTRING extension =
+            name.substring(name.indexOf('.') + 1, name.length());
+        if (firmware.equals("firmware") &&
+            (hardware.equals("ESP8266") || hardware.equals("ESP32")) &&
+            extension.equals("bin")) {
+
+          Serial.println("OTA FIRMWARE FOUND, NOW BROADCASTING");
+
+          //This is the important bit for OTA, up to now was just getting the file. 
+          //If you are using some other way to upload firmware, possibly from 
+          //mqtt or something, this is what needs to be changed.
+          //This function could also be changed to support OTA of multiple files
+          //at the same time, potentially through using the pkg.md5 as a key in
+          //a map to determine which to send
+          mesh.initOTASend(
+              [&entry](painlessmesh::plugin::ota::DataRequest pkg,
+                       char* buffer) {
+                
+                //fill the buffer with the requested data packet from the node.
+                entry.seek(OTA_PART_SIZE * pkg.partNo);
+                entry.readBytes(buffer, OTA_PART_SIZE);
+                
+                //The buffer can hold OTA_PART_SIZE bytes, but the last packet may
+                //not be that long. Return the actual size of the packet.
+                return min((unsigned)OTA_PART_SIZE,
+                           entry.size() - (OTA_PART_SIZE * pkg.partNo));
+              },
+              OTA_PART_SIZE);
+
+          //Calculate the MD5 hash of the firmware we are trying to send. This will be used
+          //to validate the firmware as well as tell if a node needs this firmware.
+          MD5Builder md5;
+          md5.begin();
+          md5.addStream(entry, entry.size());
+          md5.calculate(); 
+
+          //Make it known to the network that there is OTA firmware available.
+          //This will send a message every minute for an hour letting nodes know
+          //that firmware is available.
+          //This returns a task that allows you to do things on disable or more,
+          //like closing your files or whatever.
+          mesh.offerOTA(role, hardware, md5.toString(),
+                        ceil(((float)entry.size()) / OTA_PART_SIZE), false);
+
+        }
+      }
+    }
+  }
+
+
+*/
+
 }
 
 void loop() {
   mesh.update();
+  period=millis()/1000;                                                    // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
 
   mqttClient.loop();
+  //nMapClient.loop();
+
+if(period == 60 && testIP == getlocalIP()) 
+
+  {
+    Serial.print("trying secondary ssid");
+    mesh.stationManual(STATION_SSID1, STATION_PASSWORD1);
+    mqttBroker = mqttBroker_secondary;
+    Serial.print(mqttBroker);
+  }
+
+ 
 
   if(myIP != getlocalIP()){
     myIP = getlocalIP();
     Serial.println("My IP is " + myIP.toString());
 
-    if (mqttClient.connect("painlessMeshClient")) {
-      mqttClient.publish("painlessMesh/from/gateway","Ready!");
-      mqttClient.subscribe("painlessMesh/to/#");
+    if (mqttClient.connect("hetadatainMeshClient")) {
+      //mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
+      mqttClient.publish("Nmap/from/gateway","Ready!");
+
+      mqttClient.subscribe("hetadatainMesh/to/+");
     } 
+
+
+
+
+
   }
+
+
+
+
+
+   
 }
 
 // Publish Received msg from nodes to mqtt broker
 void receivedCallback( const uint32_t &from, const String &msg ) {
- Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
-  String topic = "painlessMesh/from/" + String(from);
-  mqttClient.publish(topic.c_str(), msg.c_str());
-  Serial.println(mesh.asNodeTree().toString());                                   // Gives the mesh network tree structre
+ //Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
+ 
+  
+  if(msg == "online?"){
+  // if(isConnected == true){
+    mesh.sendSingle(from, String("online"));
 
+    //  }
+    }
+  
+  else{
+    
+  String topic = "hetadatainMesh/from/" + String(from);
+ 
+  mqttClient.publish(topic.c_str(), msg.c_str());
+
+
+String nMap = mesh.asNodeTree().toString();
+ Serial.print(mesh.asNodeTree().toString());
+
+ String meshTopology = mesh.subConnectionJson();
+     if (meshTopology != NULL)
+          Serial.printf("MeshTopology: %s\n", meshTopology.c_str());
+    
+ 
+ mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
+    isConnected = false;
+    sendTime();
+    }
+  
+  
+   if(period >= 600 && testIP == getlocalIP()){
+  while(1);
+  }
+ 
+                                   
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
@@ -107,7 +330,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
       String str;
       for (auto &&id : nodes)
         str += String(id) + String(" ");
-      mqttClient.publish("painlessMesh/from/gateway", str.c_str());
+      mqttClient.publish("hetadatainMesh/from/gateway", str.c_str());
     }
   }
   else if(targetStr == "broadcast") 
@@ -123,11 +346,11 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     }
     else
     {
-      mqttClient.publish("painlessMesh/from/gateway", "Client not connected!");
+      mqttClient.publish("hetadatainMesh/from/gateway", "Client not connected!");
     }
-  }
+ 
   
-}
+}}
 
 IPAddress getlocalIP() {
   return IPAddress(mesh.getStationIP());
