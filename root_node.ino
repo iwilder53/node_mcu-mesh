@@ -48,8 +48,8 @@ IPAddress myIP(0,0,0,0);
 //IPAddress mqttBroker_secondary(192, 168, 31, 35);
 
 
-IPAddress mqtt1 (0,0,0,0);
-IPAddress mqtt2 (0,0,0,0);
+IPAddress mqtt1 ;//(0,0,0,0);
+IPAddress mqtt2 ;//(0,0,0,0);
 
 
 uint8_t ip1_oct1,ip1_oct2,ip1_oct3,ip1_oct4;
@@ -62,7 +62,7 @@ String Secondary_PASS;
 
 painlessMesh  mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(mqtt1, 1883, mqttCallback, wifiClient);    
+PubSubClient mqttClient(wifiClient);//(mqtt1, 1883, mqttCallback, wifiClient);    
 //PubSubClient nMapClient(mqttBroker, 1884, mqttCallback, wifiClient);              
           
 Scheduler userScheduler;
@@ -191,8 +191,9 @@ LittleFS.begin();
 
 
   LittleFS.end();
+mqttClient.setServer(mqtt1, 1883);
+mqttClient.setCallback(mqttCallback);
 
-  
   //rtc.setDate(19, 2, 28);
   //rtc.setTime(23, 59, 50);
 
@@ -200,7 +201,7 @@ LittleFS.begin();
 
  
   
-  mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
+  mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 1 );
   mesh.onReceive(&receivedCallback);
   Serial.print("Node id is: ");                                                 
   Serial.println(mesh.getNodeId());
@@ -211,10 +212,10 @@ LittleFS.begin();
  mesh.setContainsRoot(true);
 
 
-  userScheduler.addTask( taskSendNmap );
-  userScheduler.addTask(taskSendTime);
-  taskSendNmap.enable();
-  taskSendTime.enable();
+ // userScheduler.addTask( taskSendNmap );
+  //userScheduler.addTask(taskSendTime);
+  //taskSendNmap.enable();
+  //taskSendTime.enable();
   
  
   
@@ -331,13 +332,13 @@ void loop() {
   mqttClient.loop();
   //nMapClient.loop();
 
-if(period == 60 && testIP == getlocalIP()) 
+if(millis() == 6000 && testIP == getlocalIP()) 
 
   {
     Serial.print("trying secondary ssid");
     mesh.stationManual(Secondary_SSID, Secondary_PASS);
-    mqtt1 = mqtt2;
     Serial.print(mqtt1);
+    mqttClient.setServer(mqtt2, 1883);
   }
 
  
@@ -347,9 +348,7 @@ if(period == 60 && testIP == getlocalIP())
     Serial.println("My IP is " + myIP.toString());
 
     if (mqttClient.connect("hetadatainMeshClient")) {
-      //mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
-      mqttClient.publish("Nmap/from/gateway","Ready!");
-
+      mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
       mqttClient.subscribe("hetadatainMesh/to/+");
     } 
 
