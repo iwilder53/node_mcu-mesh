@@ -1,7 +1,8 @@
 //This Code will only be utilised for root node.
 //#include "RTCDS1307.h"
 #include "RTClib.h"
-
+#include <LittleFS.h>
+#include "FS.h"
 #include <Arduino.h>
 #include <painlessMesh.h>
 #include <PubSubClient.h>
@@ -13,9 +14,8 @@
 #include <AsyncTCP.h>
 #endif
 #include <ESPAsyncWebServer.h>
-#include <FS.h>
-#include "SD.h"
-#include "SPI.h"
+//#include "SD.h"
+//#include "SPI.h"
 
 #define OTA_PART_SIZE 1024 //How many bytes to send per OTA data packet
 
@@ -25,14 +25,14 @@ bool isConnected;
 AsyncWebServer server(80);
 
 
-#define   MESH_PREFIX     "HetaDatain"                  
-#define   MESH_PASSWORD   "Test@Run_1"              
+//#define   MESH_PREFIX     "HetaDatain"                  
+//#define   MESH_PASSWORD   "Test@Run_1"              
 #define   MESH_PORT       5555                               
 // Add wi-fi credentials to connect with mqtt  broker
-#define   STATION_SSID     "Hetadatain_GF"                     
-#define   STATION_PASSWORD "hetadatain@123"               
-#define   STATION_SSID1     "Hetadatain_FF"                     
-#define   STATION_PASSWORD1 "hetadatain@123"
+//#define   STATION_SSID     "Hetadatain_GF"                     
+//#define   STATION_PASSWORD "hetadatain@123"               
+//#define   STATION_SSID1     "Hetadatain_FF"                     
+//#define   STATION_PASSWORD1 "hetadatain@123"
 #define HOSTNAME "MQTT_Bridge"
 
 // Prototypes
@@ -44,13 +44,25 @@ void sendTime();
 IPAddress getlocalIP();
 IPAddress testIP(0,0,0,0);
 IPAddress myIP(0,0,0,0);
-IPAddress mqttBroker(192, 168, 31, 35);     
-IPAddress mqttBroker_secondary(192, 168, 31, 35);                    
+//IPAddress mqttBroker(192, 168, 31, 35);     
+//IPAddress mqttBroker_secondary(192, 168, 31, 35);
+
+
+IPAddress mqtt1 (0,0,0,0);
+IPAddress mqtt2 (0,0,0,0);
+
+
+uint8_t ip1_oct1,ip1_oct2,ip1_oct3,ip1_oct4;
+uint8_t ip2_oct1,ip2_oct2,ip2_oct3,ip2_oct4;
+
+String Secondary_SSID;
+String Secondary_PASS;
+
 
 
 painlessMesh  mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);    
+PubSubClient mqttClient(mqtt1, 1883, mqttCallback, wifiClient);    
 //PubSubClient nMapClient(mqttBroker, 1884, mqttCallback, wifiClient);              
           
 Scheduler userScheduler;
@@ -98,8 +110,89 @@ Task taskSendNmap( TASK_IMMEDIATE , TASK_ONCE, &sendNmap );   // Set task second
     }
 
 void setup() {
-  Serial.begin(115200);
+Serial.begin(115200);
   rtc.begin();
+
+
+
+LittleFS.begin();
+  File configFile = LittleFS.open("/config.json", "r");
+  if (!configFile) {
+    Serial.println("Failed to open config file");
+  }
+
+  size_t size = configFile.size();
+  if (size > 1024) {
+    Serial.println("Config file size is too large");
+  }
+
+  // Allocate a buffer to store contents of the file.
+  std::unique_ptr<char[]> buf(new char[size]);
+
+  // We don't use String here because ArduinoJson library requires the input
+  // buffer to be mutable. If you don't use ArduinoJson, you may as well
+  // use configFile.readString instead.
+  configFile.readBytes(buf.get(), size);
+
+  StaticJsonDocument<300> doc;
+  auto error = deserializeJson(doc, buf.get());
+  if (error) {
+
+    Serial.println("Failed to parse config file");
+
+  }
+  
+  
+  const char* MESH_PREFIX = doc["mssid"];
+  const char* MESH_PASSWORD = doc["mpass"];
+  const char* STATION_SSID = doc["rssid1"];
+  const char* STATION_PASSWORD = doc["rpass1"];
+  const char* STATION_SSID_1 = doc["rssid2"];
+  const char* STATION_PASSWORD_1 = doc["rpass2"];
+
+  Secondary_SSID = STATION_SSID_1;
+  Secondary_PASS = STATION_PASSWORD_1;
+
+  Serial.println(MESH_PREFIX);
+  Serial.println(MESH_PASSWORD);
+  Serial.println(STATION_SSID);
+  Serial.println(STATION_PASSWORD);
+  Serial.println(Secondary_SSID);
+  Serial.println(Secondary_PASS);
+
+
+  const char* ip1 = doc["ip11"]; 
+  const char* ip2 = doc["ip12"]; 
+  const char* ip3 = doc["ip13"]; 
+  const char* ip4 = doc["ip14"];
+  ip1_oct1 = atoi(ip1);
+  ip1_oct2 = atoi(ip2);
+  ip1_oct3 = atoi(ip3);
+  ip1_oct4 = atoi(ip4);
+
+  IPAddress temp1 (ip1_oct1, ip1_oct2, ip1_oct3, ip1_oct4);
+  mqtt1 = temp1;
+  Serial.println(mqtt1);
+
+  const char* ip21 = doc["ip21"]; 
+  const char* ip22 = doc["ip22"]; 
+  const char* ip23 = doc["ip23"]; 
+  const char* ip24 = doc["ip24"];
+  
+
+  ip2_oct1 = atoi(ip21);
+  ip2_oct2 = atoi(ip22);
+  ip2_oct3 = atoi(ip23);
+  ip2_oct4 = atoi(ip24);
+
+  IPAddress temp2 (ip2_oct1, ip2_oct2, ip2_oct3, ip2_oct4);
+  mqtt2 = temp2;
+  Serial.println(mqtt2);
+
+
+  LittleFS.end();
+
+  
   //rtc.setDate(19, 2, 28);
   //rtc.setTime(23, 59, 50);
 
@@ -242,9 +335,9 @@ if(period == 60 && testIP == getlocalIP())
 
   {
     Serial.print("trying secondary ssid");
-    mesh.stationManual(STATION_SSID1, STATION_PASSWORD1);
-    mqttBroker = mqttBroker_secondary;
-    Serial.print(mqttBroker);
+    mesh.stationManual(Secondary_SSID, Secondary_PASS);
+    mqtt1 = mqtt2;
+    Serial.print(mqtt1);
   }
 
  
