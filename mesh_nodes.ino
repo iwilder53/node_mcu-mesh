@@ -7,7 +7,6 @@
 
 
 
-
 #define MAX485_DE      D2
 #define MAX485_RE_NEG  D3
   
@@ -20,8 +19,11 @@
 //#define   MESH_PASSWORD   "Test@Run_1"                         // Mesh Password should be same for all  nodes in Mesh Network
 #define   MESH_PORT       5555      // Mesh Port should be same for all  nodes in Mesh Network
 
-#define connLed D0        
-#define sendLed D1        
+#define sendLed D1    
+
+#define connLed D0
+#define   BLINK_PERIOD    3000 // milliseconds until cycle repeat
+#define   BLINK_DURATION  100  //
 
 
 uint8_t pins; //Adc pins to read
@@ -30,7 +32,6 @@ Scheduler userScheduler; // to control your personal task
 painlessMesh  mesh;
 MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
 ModbusMaster node;
-
 
 
 
@@ -47,6 +48,8 @@ ModbusMaster node;
   uint32_t root;
   long previousMillis = 0; 
   uint16_t a[70],b[70];  
+
+  
   int first_Reg, second_Reg;
 
 
@@ -68,6 +71,8 @@ ModbusMaster node;
 
    void blink_con_led();
 
+
+  
   Task taskUpdateTime( TASK_SECOND * 1 , TASK_FOREVER, &updateTime );   // Set task second to send msg in a time interval (Here interval is 4 second)
   
   void updateTime(){
@@ -221,8 +226,6 @@ void postTransmission()
   const char* DELAY = doc["delay"];
 
 
-  // Real world application would store these values in some variables for
-  // later use.
    
   sendDelay = atoi(DELAY);
   Serial.print("Loaded id: ");
@@ -277,8 +280,6 @@ File timeFile = LittleFS.open("time.txt", "r");
     userScheduler.addTask(taskWriteToCard);
     //userScheduler.addTask(taskDataStream);
     userScheduler.addTask(taskConnLed);
-
-
 
 
    taskUpdateTime.enable();
@@ -668,6 +669,8 @@ bool dataStream(int one ){
     first_Reg =node.getResponseBuffer(0);
     second_Reg =node.getResponseBuffer(1);
       return true;
+        node.clearResponseBuffer();
+
     }
     else{
       
@@ -677,10 +680,10 @@ bool dataStream(int one ){
 
 String readMfd(){
   String msgMfd; 
-  node.clearResponseBuffer();
  
   if (dataStream() == true){
-        delay(80);       
+    int   result =  node.readHoldingRegisters(100, 2 );        //Don't change this EVER!!
+    delay(60);
     msgMfd += "," + String(readWattageR(100)); 
     delay(80);              
     msgMfd += "," + String(readWattageR(102));//WR
@@ -689,95 +692,58 @@ String readMfd(){
     delay(80);               //wy
     msgMfd +=  "," + String(readWattageR(106));//Iavg
        delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(142)); 
         delay(80);               //wy
-msgMfd += "," + String(readWattageR(100)); 
+msgMfd += "," + String(readWattageR(144)); 
        delay(80);               //wy
- msgMfd += "," + String(readWattageR(100)); 
+ msgMfd += "," + String(readWattageR(146)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(150)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100));
+    msgMfd += "," + String(readWattageR(152));
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(154)); 
        delay(80);               //wy
- msgMfd += "," + String(readWattageR(100)); 
+ msgMfd += "," + String(readWattageR(116)); 
        delay(80);               //wy
- msgMfd += "," + String(readWattageR(100)); 
+ msgMfd += "," + String(readWattageR(140)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(118)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(120)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(122)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(124)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(126)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(128)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(130)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(132)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(134)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(136)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(138)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(156)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(158)); 
     delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(160)); 
        delay(80);               //wy
- msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-    msgMfd += "," + String(readWattageR(100)); 
-    delay(80);               //wy
-
-
-  
-      }
+ msgMfd += "," + String(readWattageR(148));
+   }
    //msgMfd += "," + String(readRegister());//VAH
    //  node.clearResponseBuffer();
 
   return msgMfd;
 }
-bool dataStream(){
-  
-   //while(i<160)
-  
-    int result =  node.readHoldingRegisters(i, 2);
-    a[j] =node.getResponseBuffer(0);
-    b[j] =node.getResponseBuffer(1);
-    i=i+2;
-    j++;
-    if (i = 160 ){
-       i = 100;
-        j = 0;
-      //taskDataStream.disable();
-      return true;
-      }
-}
+
 
 
 void blink_con_led(){
