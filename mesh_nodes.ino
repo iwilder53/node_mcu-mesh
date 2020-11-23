@@ -743,7 +743,22 @@ msgMfd += "," + String(readWattageR(144));
 
   return msgMfd;
 }
-
+bool dataStream(){
+  
+   //while(i<160)
+  
+    int result =  node.readHoldingRegisters(i, 2);
+    a[j] =node.getResponseBuffer(0);
+    b[j] =node.getResponseBuffer(1);
+    i=i+2;
+    j++;
+    if (i = 160 ){
+       i = 100;
+        j = 0;
+      //taskDataStream.disable();
+      return true;
+      }
+}
 
 
 void blink_con_led(){
