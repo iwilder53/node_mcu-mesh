@@ -1,5 +1,6 @@
 //This Code will only be utilised for root node.
 //#include "RTCDS1307.h"
+#include <TZ.h>
 #include "RTClib.h"
 #include <LittleFS.h>
 #include "FS.h"
@@ -14,6 +15,16 @@
 #include <AsyncTCP.h>
 #endif
 #include <ESPAsyncWebServer.h>
+
+
+#include <coredecls.h>                  // settimeofday_cb()
+#include <Schedule.h>
+#include <PolledTimeout.h>
+
+#include <time.h>                       // time() ctime()
+#include <sys/time.h>                   // struct timeval
+
+#include <sntp.h>  
 //#include "SD.h"
 //#include "SPI.h"
 
@@ -21,6 +32,19 @@
 
 bool isConnected;
 
+#define MYTZ TZ_Asia_Kolkata
+
+
+static timeval tv;
+static timespec tp;
+static time_t now;
+static uint32_t now_ms, now_us;
+
+static esp8266::polledTimeout::periodicMs showTimeNow(60000);
+static int time_machine_days = 0; // 0 = now
+static bool time_machine_running = false;
+
+extern "C" int clock_gettime(clockid_t unused, struct timespec *tp);
 
 AsyncWebServer server(80);
 
@@ -54,7 +78,7 @@ IPAddress mqtt2 ;//(0,0,0,0);
 
 uint8_t ip1_oct1,ip1_oct2,ip1_oct3,ip1_oct4;
 uint8_t ip2_oct1,ip2_oct2,ip2_oct3,ip2_oct4;
-int pos;
+ long pos;
 
 
 String Secondary_SSID;
@@ -77,16 +101,32 @@ int period;
 String m[12] = {"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"};
 String w[7] = {"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"};
 
-Task taskSendTime( TASK_HOUR , TASK_FOREVER, &sendTime );   
+Task taskSendTime( TASK_MINUTE * 2 , TASK_FOREVER, &sendTime );   
 void sendTime()
-{ Serial.print("getting timeStamp");
-   
-    DateTime now = rtc.now();
-    Serial.print(now.unixtime() / 86400L);
+{ 
+  //Serial.print("getting timeStamp");
+    //DateTime now = rtc.now();
+  //  Serial.print(now.unixtime() / 86400L);
+  gettimeofday(&tv, nullptr);
+  clock_gettime(0, &tp);
+  now = time(nullptr);
 
-    String msg = String(now.unixtime() );
-  mesh.sendBroadcast(msg);
-  Serial.print(msg);
+  Serial.print("time:      ");
+  Serial.println((uint32_t)now);
+  int timeNow = ((uint32_t)now);
+  // timeNow +=  timeNow + 19800;
+   String timeFromNTP = String(timeNow);
+  // String msg = String(now.unixtime() );
+  mesh.sendBroadcast(timeFromNTP);
+  Serial.print(timeFromNTP);
+
+
+
+String nMap = mesh.asNodeTree().toString();
+ //Serial.print(mesh.asNodeTree().toString());
+
+ mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
+    isConnected = false;
 
  //String topic = "Nmap/from/gateway";
  
@@ -253,11 +293,13 @@ mqttClient.setCallback(mqttCallback);
 
 
   userScheduler.addTask( taskSendLog );
-  //userScheduler.addTask(taskSendTime);
-  //taskSendTime.enable();
+  userScheduler.addTask(taskSendTime);
+  taskSendTime.enable();
   
- 
-  
+   configTime(MYTZ, "pool.ntp.org");
+    sntp_servermode_dhcp(0);
+    showTime();
+
   //Async webserver
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
     {
@@ -372,7 +414,6 @@ void loop() {
   //nMapClient.loop();
 
 if(millis() == 60000 && testIP == getlocalIP()) 
-
   {
     Serial.print("trying secondary ssid");
     mesh.stationManual(Secondary_SSID, Secondary_PASS);
@@ -380,7 +421,13 @@ if(millis() == 60000 && testIP == getlocalIP())
     mqttClient.setServer(mqtt2, 1883);
   }
 
- 
+  if (myIP == getlocalIP() &&( !mqttClient.connected())) {
+       if (mqttClient.connect("hetadatainMeshClient")) {
+      mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
+      mqttClient.subscribe("hetadatainMesh/to/+");
+      taskSendLog.enable();
+       }
+    } 
 
   if(myIP != getlocalIP()){
     myIP = getlocalIP();
@@ -392,18 +439,7 @@ if(millis() == 60000 && testIP == getlocalIP())
         taskSendLog.enable();
 
     } 
-
-
-
-
-
   }
-
-
-
-
-
-   
 }
 
 // Publish Received msg from nodes to mqtt broker
@@ -426,25 +462,11 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
        dataFile.println(msg);
        dataFile.close();
        LittleFS.end();
-
     }
     else{
   String topic = "hetadatainMesh/from/" + String(from);
  
   mqttClient.publish(topic.c_str(), msg.c_str());
-
-
-String nMap = mesh.asNodeTree().toString();
- Serial.print(mesh.asNodeTree().toString());
-
- String meshTopology = mesh.subConnectionJson();
-     if (meshTopology != NULL)
-          Serial.printf("MeshTopology: %s\n", meshTopology.c_str());
-    
- 
- mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
-    isConnected = false;
-    sendTime();
     }
   }
   
@@ -497,3 +519,99 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
 IPAddress getlocalIP() {
   return IPAddress(mesh.getStationIP());
 }
+
+
+void time_is_set_scheduled() {
+  // everything is allowed in this function
+
+  if (time_machine_days == 0) {
+    time_machine_running = !time_machine_running;
+  }
+
+  // time machine demo
+  if (time_machine_running) {
+    if (time_machine_days == 0)
+      Serial.printf("---- settimeofday() has been called - possibly from SNTP\n"
+                    "     (starting time machine demo to show libc's automatic DST handling)\n\n");
+    now = time(nullptr);
+    const tm* tm = localtime(&now);
+    Serial.printf("future=%3ddays: DST=%s - ",
+                  time_machine_days,
+                  tm->tm_isdst ? "true " : "false");
+    Serial.print(ctime(&now));
+    gettimeofday(&tv, nullptr);
+    constexpr int days = 30;
+    time_machine_days += days;
+    if (time_machine_days > 360) {
+      tv.tv_sec -= (time_machine_days - days) * 60 * 60 * 24;
+      time_machine_days = 0;
+    } else {
+      tv.tv_sec += days * 60 * 60 * 24;
+    }
+    settimeofday(&tv, nullptr);
+  } else {
+    showTime();
+  }
+}
+
+void showTime() {
+  gettimeofday(&tv, nullptr);
+  clock_gettime(0, &tp);
+  now = time(nullptr);
+  now_ms = millis();
+  now_us = micros();
+
+  // time from boot
+  Serial.print("clock:     ");
+  Serial.print((uint32_t)tp.tv_sec);
+  Serial.print("s / ");
+  Serial.print((uint32_t)tp.tv_nsec);
+  Serial.println("ns");
+
+  // time from boot
+  Serial.print("millis:    ");
+  Serial.println(now_ms);
+  Serial.print("micros:    ");
+  Serial.println(now_us);
+
+  // EPOCH+tz+dst
+  Serial.print("gtod:      ");
+  Serial.print((uint32_t)tv.tv_sec);
+  Serial.print("s / ");
+  Serial.print((uint32_t)tv.tv_usec);
+  Serial.println("us");
+
+  // EPOCH+tz+dst
+  Serial.print("time:      ");
+  Serial.println((uint32_t)now);
+
+  // timezone and demo in the future
+  Serial.printf("timezone:  %s\n", getenv("TZ") ? : "(none)");
+
+  // human readable
+  Serial.print("ctime:     ");
+  Serial.print(ctime(&now));
+
+#if LWIP_VERSION_MAJOR > 1
+
+  // LwIP v2 is able to list more details about the currently configured SNTP servers
+  for (int i = 0; i < SNTP_MAX_SERVERS; i++) {
+    IPAddress sntp = *sntp_getserver(i);
+    const char* name = sntp_getservername(i);
+    if (sntp.isSet()) {
+      Serial.printf("sntp%d:     ", i);
+      if (name) {
+        Serial.printf("%s (%s) ", name, sntp.toString().c_str());
+      } else {
+        Serial.printf("%s ", sntp.toString().c_str());
+      }
+      Serial.printf("IPv6: %s Reachability: %o\n",
+                    sntp.isV6() ? "Yes" : "No",
+                    sntp_getreachability(i));
+    }
+  }
+#endif
+
+  Serial.println();
+}
+
