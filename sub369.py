@@ -7,6 +7,7 @@ import csv
 import json
 import os 
 import socket
+import pytz
  
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc)) #Print result of connection attempt
@@ -29,29 +30,29 @@ def on_message(client, userdata, msg):
     msg.payload = msg.payload.decode("utf-8") 
     temp1 = msg.payload[0:10]
     temp = msg.payload.replace(temp1, '')
+    IST = pytz.timezone('Asia/Kolkata')
     
     try:
     	if msg.payload:
     		ts_epoch = int(temp1)
-    		print(datetime.fromtimestamp(ts_epoch, timezone.utc).strftime('%d/%m/%y %H:%M:%S') + "," + host + str(temp), file = f)
-    		print(datetime.fromtimestamp(ts_epoch, timezone.utc).strftime('%d/%m/%y %H:%M:%S') + "," + host + str(temp))
+    		print(datetime.fromtimestamp(ts_epoch, IST).strftime('%d/%m/%y %H:%M:%S') + "," + host + str(temp), file = f)
+    		print(datetime.fromtimestamp(ts_epoch, IST).strftime('%d/%m/%y %H:%M:%S') + "," + host + str(temp))
     except Exception as e:
-    	currentFile    =   __file__                      #The full path and filename of the file 
-    	realPath       =   os.path.realpath(currentFile) #file full path with filename
-    	dirPath        =   os.path.dirname(realPath)
-    	if not os.path.exists(dirPath+"/data/"):
-        	        os.makedirs(dirPath+"/data/") 
-    	host           =   socket.gethostname()  
-    	filename= dirPath+"/data/"+datetime.now().strftime('%d-%m-%y')+"_"+host+"_json"+".json"
-    	f = open(filename, "a+")
-    	print(datetime.now().strftime('%d/%m/%y %H:%M:%S') + "," + host + str(msg.payload), file = f)  
-    	print(datetime.now().strftime('%H:%M:%S') + "," + host + str(msg.payload))
+       		currentFile    =   __file__                      #The full path and filename of the file 
+       		realPath       =   os.path.realpath(currentFile) #file full path with filename
+       		dirPath        =   os.path.dirname(realPath)
+       		if not os.path.exists(dirPath+"/data/"):
+        		        os.makedirs(dirPath+"/data/") 
+        	host           =   socket.gethostname()  
+        	filename= dirPath+"/data/"+datetime.now().strftime('%d-%m-%y')+"_"+host+"_json"+".json"
+        	f = open(filename, "a+")
+        	print(datetime.now().strftime('%d/%m/%y %H:%M:%S') + "," + host + str(msg.payload), file = f)  
+        	print(datetime.now().strftime('%H:%M:%S') + "," + host + str(msg.payload))
     	
 client = mqtt.Client()               # Create instance of client with client ID “digi_mqtt_test”
 client.on_connect = on_connect       # Define callback function for successful connection
 client.on_disconnect = on_disconnect # Define callback function for disconnection
 client.on_message = on_message       # Define callback function for receipt of a message
-client.connect("127.0.0.1", 1883, 100)
+client.connect("192.168.31.35", 1883, 100)
 client.loop_forever()
-
 
