@@ -33,7 +33,7 @@ painlessMesh  mesh;
 MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
 ModbusMaster node;
 
-
+IPAddress testIP;
 
   int sendDelay = 2 ;
   unsigned long period=0; 
@@ -76,7 +76,7 @@ ModbusMaster node;
   Task taskUpdateTime( TASK_SECOND * 1 , TASK_FOREVER, &updateTime );   // Set task second to send msg in a time interval (Here interval is 4 second)
   
   void updateTime(){
-    digitalWrite(connLed, LOW);
+   digitalWrite(connLed, LOW);
 
     wdt++;
     ts_epoch++;
@@ -114,8 +114,8 @@ void postTransmission()
    Serial.println(msg);
   Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
     if (WiFi.RSSI() == 31){
-
       taskWriteToCard.enable();
+
     }
            digitalWrite(sendLed, LOW);  
 
@@ -294,8 +294,6 @@ File timeFile = LittleFS.open("time.txt", "r");
    if (mfd == 1) {        
    // taskDataStream.enable();
     }
-
- 
 
   node.preTransmission(preTransmission);
   node.postTransmission(postTransmission);
@@ -479,7 +477,7 @@ void writeToCard(){
 void writeTimeToCard()
 {
       LittleFS.begin();
-      LittleFS.remove("time.txt");
+      //LittleFS.remove("time.txt");
     File dataFile = LittleFS.open("time.txt", "w");
   if (dataFile) {
     dataFile.println(ts_epoch);
@@ -743,7 +741,7 @@ msgMfd += "," + String(readWattageR(144));
 
   return msgMfd;
 }
-bool dataStream(){
+bool dataStream(){                                        // don't remove this  its needed to shut linker up
   
    //while(i<160)
   
@@ -762,7 +760,5 @@ bool dataStream(){
 
 
 void blink_con_led(){
-digitalWrite(connLed, HIGH);
-
-
+  digitalWrite(connLed, HIGH);
 }
