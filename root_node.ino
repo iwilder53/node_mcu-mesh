@@ -38,7 +38,7 @@ AsyncWebServer server(80);
 // Prototypes
 void receivedCallback( const uint32_t &from, const String &msg );
 void mqttCallback(char* topic, byte* payload, unsigned int length);
-void sendNmap();
+void sendLog();
 void sendTime();
 
 IPAddress getlocalIP();
@@ -54,6 +54,8 @@ IPAddress mqtt2 ;//(0,0,0,0);
 
 uint8_t ip1_oct1,ip1_oct2,ip1_oct3,ip1_oct4;
 uint8_t ip2_oct1,ip2_oct2,ip2_oct3,ip2_oct4;
+int pos;
+
 
 String Secondary_SSID;
 String Secondary_PASS;
@@ -75,7 +77,7 @@ int period;
 String m[12] = {"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"};
 String w[7] = {"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"};
 
-Task taskSendTime( TASK_SECOND * 5 , TASK_FOREVER, &sendTime );   
+Task taskSendTime( TASK_HOUR , TASK_FOREVER, &sendTime );   
 void sendTime()
 { Serial.print("getting timeStamp");
    
@@ -98,14 +100,52 @@ String scanprocessor(const String& var)
   return String();
 }
 
-Task taskSendNmap( TASK_IMMEDIATE , TASK_ONCE, &sendNmap );   // Set task second to send msg in a time interval
+Task taskSendLog( TASK_SECOND * 5 , TASK_FOREVER, &sendLog );   // Set task second to send msg in a time interval
 
-  void sendNmap(){
-    Serial.print("sending tree");
-      String topic = "hetadatainMesh/from/gateway";
-     String nMap = mesh.asNodeTree().toString();
+  void sendLog(){
+         String logs;
+         String topic = "hetadatainMesh/from/gateway";
+
+
+    LittleFS.begin();
+    File file = LittleFS.open("offlinelog.txt","r"); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
+//#endif
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    taskSendLog.disable();
+          pos = 0;
+          //timeIndex = 0;
+             return;
+  }
+    // String logs;
+    String buffer ;
+    uint8_t i = 0;
+ for (int i = 0; i < 1 ; i++) 
+{ 
+      file.seek(pos);
+     buffer = file.readStringUntil('\n');
+   // Serial.println(buffer); //Printing for debugging purpose         
+       logs = buffer; 
+  if(buffer != ""){
+      mqttClient.publish(topic.c_str(), logs.c_str());
+    // mesh.sendSingle(root, logs );                                       
+      Serial.println(logs); 
+      pos = file.position();
+  }
  
- mqttClient.publish(topic.c_str(), nMap.c_str());
+  file.close();
+  Serial.println(F("DONE Reading"));
+ // if (pos == file.size()){
+  }
+    if (buffer == "") { 
+     Serial.print ("done dumping");
+      LittleFS.remove("offlinelog.txt");
+  }
+
+      LittleFS.end();
+
+
+ 
     
     }
 
@@ -201,7 +241,7 @@ mqttClient.setCallback(mqttCallback);
 
  
   
-  mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 1 );
+  mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 1 );
   mesh.onReceive(&receivedCallback);
   Serial.print("Node id is: ");                                                 
   Serial.println(mesh.getNodeId());
@@ -212,9 +252,8 @@ mqttClient.setCallback(mqttCallback);
  mesh.setContainsRoot(true);
 
 
- // userScheduler.addTask( taskSendNmap );
+  userScheduler.addTask( taskSendLog );
   //userScheduler.addTask(taskSendTime);
-  //taskSendNmap.enable();
   //taskSendTime.enable();
   
  
@@ -332,7 +371,7 @@ void loop() {
   mqttClient.loop();
   //nMapClient.loop();
 
-if(millis() == 6000 && testIP == getlocalIP()) 
+if(millis() == 60000 && testIP == getlocalIP()) 
 
   {
     Serial.print("trying secondary ssid");
@@ -350,6 +389,8 @@ if(millis() == 6000 && testIP == getlocalIP())
     if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
       mqttClient.subscribe("hetadatainMesh/to/+");
+        taskSendLog.enable();
+
     } 
 
 
@@ -378,7 +419,16 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
     }
   
   else{
-    
+    if (!mqttClient.connected()){
+
+      LittleFS.begin();
+      File dataFile = LittleFS.open("offlinelog.txt", "a");
+       dataFile.println(msg);
+       dataFile.close();
+       LittleFS.end();
+
+    }
+    else{
   String topic = "hetadatainMesh/from/" + String(from);
  
   mqttClient.publish(topic.c_str(), msg.c_str());
@@ -396,7 +446,7 @@ String nMap = mesh.asNodeTree().toString();
     isConnected = false;
     sendTime();
     }
-  
+  }
   
    if(period >= 600 && testIP == getlocalIP()){
   while(1);
