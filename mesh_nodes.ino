@@ -3,17 +3,18 @@
   #include <MCP3008.h>
   #include <LittleFS.h>
   #include "FS.h"
+#include <Arduino.h>
 
 
-
-  
+#define sendLed D1    
+#define connLed D0
 
 #define CS_PIN D8
 #define CLOCK_PIN D5
 #define MOSI_PIN D7
 #define MISO_PIN D6
-#define   MESH_PREFIX     "HetaDatain"                         // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
-#define   MESH_PASSWORD   "Test@Run_1"                         // Mesh Password should be same for all  nodes in Mesh Network
+//#define   MESH_PREFIX     "HetaDatain"                         // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
+//#define   MESH_PASSWORD   "Test@Run_1"                         // Mesh Password should be same for all  nodes in Mesh Network
 #define   MESH_PORT       5555                                      // Mesh Port should be same for all  nodes in Mesh Network
 
 Scheduler userScheduler; // to control your personal task
@@ -30,27 +31,33 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   int pos;
   uint32_t root;
   long previousMillis = 0;  
+  int mcp = 0, mfd = 0, pins = 0;
 
   String msgSd;
   uint8_t interval = 1000;
   bool ackStatus;
   // User stub
    void updateTime();
+    String readMcp();
    void writeToCard();
+      void writeTimeToCard();
+
    void sendMessage() ;// Prototype so PlatformIO doesn't complain
   void sendMsgSd();
+  void blink_con_led();
   Task taskUpdateTime( TASK_SECOND * 1 , TASK_FOREVER, &updateTime );   // Set task second to send msg in a time interval (Here interval is 4 second)
   
   void updateTime(){
+    digitalWrite(connLed, LOW);
     wdt++;
     ts_epoch++;
     }
 
 
- 
-  Task taskSendMessage( TASK_MINUTE * 2 , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval (Here interval is 4 second)
-  Task taskSendMsgSd( TASK_SECOND * 5 , TASK_FOREVER, &sendMsgSd );   // Set task second to send msg in a time interval
-  Task taskWriteToCard( TASK_MINUTE * 2 , TASK_FOREVER, &writeToCard );
+   Task taskConnLed( TASK_SECOND * 1 , TASK_FOREVER, &blink_con_led );
+  Task taskSendMessage( TASK_MINUTE * sendDelay , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval (Here interval is 4 second)
+  Task taskSendMsgSd( TASK_SECOND * 3 , TASK_FOREVER, &sendMsgSd );   // Set task second to send msg in a time interval
+  Task taskWriteToCard( TASK_MINUTE * sendDelay , TASK_FOREVER, &writeToCard );
 
  
   // If you want to receive sensor readings from this node, write code in below function....
@@ -58,15 +65,20 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   void sendMessage() {
        digitalWrite(LED_BUILTIN, LOW);  
 
+   if (mesh.startDelayMeas(root)){
+  Serial.print("found root, pinging . . . ");
+  taskWriteToCard.disable();
    String msg = "online?";                                       // You can write node name/no. here so that you may easily recognize it        
-   uint32_t target = 314262534;                                         // Target is Node id of the node where you want to send sms (Here, write node id of mqtt bridge (Root Node))
+   uint32_t target = root;                                         // Target is Node id of the node where you want to send sms (Here, write node id of mqtt bridge (Root Node))
    mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
-   Serial.println(msg);
-  //Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
-    if (WiFi.RSSI() == 31){
+   Serial.println(msg);}
+   else{
+     taskWriteToCard.enable();
+       Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
 
-      taskWriteToCard.enable();
-    }
+   }
+    digitalWrite(sendLed, LOW);  
+
    } 
 
  
@@ -76,7 +88,7 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
  if (msg=="online")
   {
-   digitalWrite(LED_BUILTIN, LOW);  
+   digitalWrite(sendLed, HIGH);  
     // You can write node name/no. here so that you may easily recognize it        
    String msg = readMcp();
    mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
@@ -85,6 +97,7 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
    ackStatus = true;
    taskWriteToCard.disable();
 
+           digitalWrite(sendLed, LOW);  
 
    }
 
@@ -95,22 +108,38 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
 
   void newConnectionCallback(uint32_t nodeId) {
     Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+           String nMap = mesh.asNodeTree().toString();
+         mesh.sendSingle(root, nMap);
+         
+         if(mesh.startDelayMeas(root))
+         {  
             taskSendMsgSd.enable();
             taskWriteToCard.disable();
+           String configFile = String( sendDelay + "," + id + "," + root + ","  + mcp + ","  + mfd + ","  + pins + ","  + sendDelay);
+            mesh.sendSingle(root, configFile);
+            }
+            taskConnLed.enable();
 
  }
 
   void changedConnectionCallback() {
   Serial.printf("Changed connections\n");
+  Serial.printf("Changed connections\n");
+  String nMap = mesh.asNodeTree().toString();
+  mesh.sendSingle(root, nMap);
  }
 
   void nodeTimeAdjustedCallback(int32_t offset) {
     Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
  }
 
+ void delayReceivedCallback(uint32_t from, int32_t delay) {
+   Serial.printf("Delay to node %u is %d us\n", from, delay);
+ }
+
   void setup() {
   Serial.begin(115200);
-  LittleFS.begin();
+LittleFS.begin();
   File configFile = LittleFS.open("config.json", "r");
   if (!configFile) {
     Serial.println("Failed to open config file");
@@ -134,19 +163,49 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   if (error) {
     Serial.println("Failed to parse config file");
   }
-
+  const char* MESH_PREFIX = doc["ssid"];
+  const char* MESH_PASSWORD = doc["password"];
   const char* ID = doc["id"];
   const char* ROOT = doc["root"];
+  const char* MCP = doc["mcp"];
+  const char* MFD = doc["mfd"];
+  const char* PINS = doc["pins"];
+  const char* DELAY = doc["delay"];
 
-  // Real world application would store these values in some variables for
-  // later use.
-
+   
+  sendDelay = atoi(DELAY);
   Serial.print("Loaded id: ");
     id = atoi(ID);
   Serial.println(ID);
   Serial.print("Loaded root id: ");
    root = atoi(ROOT);
   Serial.println(ROOT);
+  mcp = atoi(MCP);
+    Serial.println(mcp);
+
+  mfd = atoi(MFD);
+  Serial.println(mfd);
+
+   pins = atoi(PINS);
+  Serial.print("Loaded MCP pins: " );
+Serial.print(pins);
+  Serial.print(" loaded Send Delay: " );
+Serial.print(sendDelay);
+
+File timeFile = LittleFS.open("time.txt", "r");
+  if (timeFile) {
+     String timeTemp = timeFile.readStringUntil('\n');
+
+    ts_epoch = timeTemp.toInt();
+    
+    timeFile.close();
+    }
+  else {
+    Serial.println("error opening  time.txt"); 
+    }  LittleFS.end();
+  
+
+
 
   mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
   // mesh.setDebugMsgTypes( ERROR | DEBUG );  // set before init() so that you can see startup messages
@@ -155,7 +214,6 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
    //mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
    mesh.setContainsRoot(true);
 
- 
     mesh.onReceive(&receivedCallback);
    mesh.onNewConnection(&newConnectionCallback);
    mesh.onChangedConnections(&changedConnectionCallback);
@@ -179,7 +237,7 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   }
 
   void loop() {
-   // it will run the user scheduler as well
+   // it will run the  scheduler as well
 
   period=millis()/1000;                                                    // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
 
@@ -197,9 +255,6 @@ MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
   ESP.deepSleep(300e6);                                                    // deepSleep mode will be active for 300*10^6 microseconds, i.e. for 300 seconds                                                         
   digitalWrite(LED_BUILTIN,HIGH); 
    }*/
- }
- void delayReceivedCallback(uint32_t from, int32_t delay) {
-   Serial.printf("Delay to node %u is %d us\n", from, delay);
  }
 
  String readMcp()
@@ -283,6 +338,8 @@ LittleFS.begin();
 
 void writeToCard(){
 {  Serial.print("write to card works");
+        digitalWrite(sendLed, HIGH);
+
      if (ackStatus == false)
      {
      String  msg = readMcp();
@@ -311,7 +368,9 @@ void writeToCard(){
     LittleFS.end();
         
         }
+
     }
+        digitalWrite(sendLed, LOW);
 
 }
 void writeTimeToCard()
@@ -326,4 +385,8 @@ void writeTimeToCard()
   else {
     Serial.println("error opening  time.txt"); 
     }  LittleFS.end();
+}
+
+void blink_con_led(){
+  digitalWrite(connLed, HIGH);
 }
