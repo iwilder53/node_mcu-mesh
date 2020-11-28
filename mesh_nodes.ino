@@ -162,8 +162,8 @@ void postTransmission()
          {  
             taskSendMsgSd.enable();
             taskWriteToCard.disable();
-           String configFile = String( ts_epoch + "," + id + "," + root + ","  + mcp + ","  + mfd + ","  + pins + ","  + sendDelay);
-            mesh.sendSingle(root, configFile);
+            String conf = String( ts_epoch + "," + id + "," + root + ","  + mcp + ","  + mfd + ","  + pins + ","  + sendDelay);
+            mesh.sendSingle(root, conf);
             }
             taskConnLed.enable();
 
@@ -171,8 +171,7 @@ void postTransmission()
 
   void changedConnectionCallback() {
   Serial.printf("Changed connections\n");
-  String nMap = mesh.subConnectionJson();
-  mesh.sendSingle(root, nMap);
+
  }
 
   void nodeTimeAdjustedCallback(int32_t offset) {
@@ -193,7 +192,7 @@ void postTransmission()
   // put your setup code here, to run once:
   
   Serial.begin(9600, SERIAL_8E1);
-  node.begin(2, Serial);
+  node.begin(1, Serial);
 
   node.preTransmission(preTransmission);
   node.postTransmission(postTransmission);
@@ -785,6 +784,6 @@ int validDenominator(int number)
 
 
 String readMfd(){
-String output = String(ts_epoch) + id + String(readWattageR(100)) + ", " + String(readWattageR(102)) + ", " + String(readWattageR(104)) + ", " + String(readWattageR(106)) + ", " + String(readWattageR(142)) + ", " + String(readWattageR(144)) + ", " + String(readWattageR(146)) + ", " + String(readWattageR(150)) + ", " + String(readWattageR(152)) + ", " + String(readWattageR(154)) + ", " + String(readWattageR(116)) + ", " + String(readWattageR(140)) + ", " + String(readWattageR(120)) + ", " + String(readWattageR(122)) + ", " + String(readWattageR(124)) + ", " + String(readWattageR(126)) + ", " + String(readWattageR(128)) + "," + String(readWattageR(130)) + ", ";
+String output = String(ts_epoch) +","+ id + String(readWattageR(100)) + ", " + String(readWattageR(102)) + ", " + String(readWattageR(104)) + ", " + String(readWattageR(106)) + ", " + String(readWattageR(142)) + ", " + String(readWattageR(144)) + ", " + String(readWattageR(146)) + ", " + String(readWattageR(150)) + ", " + String(readWattageR(152)) + ", " + String(readWattageR(154)) + ", " + String(readWattageR(116)) + ", " + String(readWattageR(140)) + ", " + String(readWattageR(120)) + ", " + String(readWattageR(122)) + ", " + String(readWattageR(124)) + ", " + String(readWattageR(126)) + ", " + String(readWattageR(128)) + "," + String(readWattageR(130));
 return output;
 }
