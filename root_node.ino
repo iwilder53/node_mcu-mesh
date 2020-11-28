@@ -54,11 +54,7 @@ AsyncWebServer server(80);
 //#define   MESH_PREFIX     "HetaDatain"                  
 //#define   MESH_PASSWORD   "Test@Run_1"              
 #define   MESH_PORT       5555                               
-// Add wi-fi credentials to connect with mqtt  broker
-//#define   STATION_SSID     "Hetadatain_GF"                     
-//#define   STATION_PASSWORD "hetadatain@123"               
-//#define   STATION_SSID1     "Hetadatain_FF"                     
-//#define   STATION_PASSWORD1 "hetadatain@123"
+
 #define HOSTNAME "MQTT_Bridge"
 
 // Prototypes
@@ -70,8 +66,6 @@ void sendTime();
 IPAddress getlocalIP();
 IPAddress testIP(0,0,0,0);
 IPAddress myIP(0,0,0,0);
-//IPAddress mqttBroker(192, 168, 31, 35);     
-//IPAddress mqttBroker_secondary(192, 168, 31, 35);
 
 
 IPAddress mqtt1 ;//(0,0,0,0);
@@ -91,7 +85,7 @@ String Secondary_PASS;
 painlessMesh  mesh;
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);//(mqtt1, 1883, mqttCallback, wifiClient);    
-//PubSubClient nMapClient(mqttBroker, 1884, mqttCallback, wifiClient);              
+
           
 Scheduler userScheduler;
 RTC_DS1307 rtc;
@@ -127,13 +121,6 @@ isConnected = false;
 String ack_pulse_to_sub = "ready";
 mqttClient.publish("hetadatainMesh/from/gateway", ack_pulse_to_sub.c_str());
 
-//String nMap = mesh.asNodeTree().toString();
-//Serial.print(mesh.asNodeTree().toString());
-//mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
-
- //String topic = "Nmap/from/gateway";
- 
- //mqttClient.publish(topic.c_str(), msg.c_str());
   
  }
 String scanprocessor(const String& var)
@@ -151,13 +138,12 @@ Task taskSendLog( TASK_SECOND * 2 , TASK_FOREVER, &sendLog );   // Set task seco
 
 
     LittleFS.begin();
-    File file = LittleFS.open("offlinelog.txt","r"); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
-//#endif
+    File file = LittleFS.open("offlinelog.txt","r"); 
   if (!file) {
     Serial.println("Failed to open file for reading");
     taskSendLog.disable();
           pos = 0;
-          //timeIndex = 0;
+
              return;
   }
     // String logs;
@@ -167,54 +153,38 @@ Task taskSendLog( TASK_SECOND * 2 , TASK_FOREVER, &sendLog );   // Set task seco
 { 
       file.seek(pos);
      buffer = file.readStringUntil('\n');
-   // Serial.println(buffer); //Printing for debugging purpose         
        logs = buffer; 
   if(buffer != ""){
       mqttClient.publish(topic.c_str(), logs.c_str());
-    // mesh.sendSingle(root, logs );                                       
       Serial.println(logs); 
       pos = file.position();
   }
- 
   file.close();
   Serial.println(F("DONE Reading"));
- // if (pos == file.size()){
-  }
+   }
     if (buffer == "") { 
      Serial.print ("done dumping");
       LittleFS.remove("offlinelog.txt");
   }
-
-      LittleFS.end();
-
-
- 
-    
+     LittleFS.end(); 
     }
 
 void setup() {
 Serial.begin(115200);
   rtc.begin();
 
-
-
 LittleFS.begin();
   File configFile = LittleFS.open("/config.json", "r");
   if (!configFile) {
     Serial.println("Failed to open config file");
   }
-
   size_t size = configFile.size();
   if (size > 1024) {
     Serial.println("Config file size is too large");
   }
 
-  // Allocate a buffer to store contents of the file.
   std::unique_ptr<char[]> buf(new char[size]);
 
-  // We don't use String here because ArduinoJson library requires the input
-  // buffer to be mutable. If you don't use ArduinoJson, you may as well
-  // use configFile.readString instead.
   configFile.readBytes(buf.get(), size);
 
   StaticJsonDocument<300> doc;
@@ -222,10 +192,8 @@ LittleFS.begin();
   if (error) {
 
     Serial.println("Failed to parse config file");
-
   }
-  
-  
+   
   const char* MESH_PREFIX = doc["mssid"];
   const char* MESH_PASSWORD = doc["mpass"];
   const char* STATION_SSID = doc["rssid1"];
@@ -242,7 +210,6 @@ LittleFS.begin();
   Serial.println(STATION_PASSWORD);
   Serial.println(Secondary_SSID);
   Serial.println(Secondary_PASS);
-
 
   const char* ip1 = doc["ip11"]; 
   const char* ip2 = doc["ip12"]; 
@@ -262,7 +229,6 @@ LittleFS.begin();
   const char* ip23 = doc["ip23"]; 
   const char* ip24 = doc["ip24"];
   
-
   ip2_oct1 = atoi(ip21);
   ip2_oct2 = atoi(ip22);
   ip2_oct3 = atoi(ip23);
@@ -272,18 +238,14 @@ LittleFS.begin();
   mqtt2 = temp2;
   Serial.println(mqtt2);
 
-
-  LittleFS.end();
+ LittleFS.end();
 mqttClient.setServer(mqtt1, 1883);
 mqttClient.setCallback(mqttCallback);
 
   //rtc.setDate(19, 2, 28);
   //rtc.setTime(23, 59, 50);
 
- mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE | GENERAL);                  
-
- 
-  
+  mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE | GENERAL);                  
   mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 1 );
   mesh.onReceive(&receivedCallback);
   Serial.print("Node id is: ");                                                 
@@ -292,7 +254,7 @@ mqttClient.setCallback(mqttCallback);
   mesh.setHostname(HOSTNAME);
 
    mesh.setRoot(true);
- mesh.setContainsRoot(true);
+   mesh.setContainsRoot(true);
 
 
   userScheduler.addTask( taskSendLog );
@@ -418,7 +380,6 @@ void loop() {
   }                                                   // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
 
   mqttClient.loop();
-  //nMapClient.loop();
 
 if(millis() == 60000 && testIP == getlocalIP()) 
   {
@@ -429,12 +390,10 @@ if(millis() == 60000 && testIP == getlocalIP())
   }
 
   if (myIP == getlocalIP() &&(mqttClient.connected() == false)) {
-            //taskSendLog.enable();
 
        if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","Ready! Reconnected");
       mqttClient.subscribe("hetadatainMesh/to/gateway");
-      //taskSendLog.enable();
        }
     } 
 
@@ -445,7 +404,6 @@ if(millis() == 60000 && testIP == getlocalIP())
     if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","ready");
       mqttClient.subscribe("hetadatainMesh/to/gateway");
-        //taskSendLog.enable();
 
     } 
   }
@@ -453,15 +411,10 @@ if(millis() == 60000 && testIP == getlocalIP())
 
 // Publish Received msg from nodes to mqtt broker
 void receivedCallback( const uint32_t &from, const String &msg ) {
- //Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
  
-  
   if(msg == "online?"){
-   //if(isConnected == true){
   mesh.sendSingle(from, String("online"));
-     // }
     }
-  
   else{
     if (!mqttClient.connected() || isConnected == false)
     {
@@ -482,9 +435,7 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
   
    if(period >= 600 && testIP == getlocalIP()){
   while(1);
-  }
- 
-                                   
+  }                                   
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
