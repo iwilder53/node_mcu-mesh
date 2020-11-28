@@ -30,7 +30,7 @@
 
 #define OTA_PART_SIZE 1024 //How many bytes to send per OTA data packet
 
-bool isConnected = false;
+bool isConnected;
 
 #define MYTZ TZ_Asia_Kolkata
  
@@ -50,8 +50,15 @@ extern "C" int clock_gettime(clockid_t unused, struct timespec *tp);
 
 AsyncWebServer server(80);
 
-             
-#define   MESH_PORT       5555          
+
+//#define   MESH_PREFIX     "HetaDatain"                  
+//#define   MESH_PASSWORD   "Test@Run_1"              
+#define   MESH_PORT       5555                               
+// Add wi-fi credentials to connect with mqtt  broker
+//#define   STATION_SSID     "Hetadatain_GF"                     
+//#define   STATION_PASSWORD "hetadatain@123"               
+//#define   STATION_SSID1     "Hetadatain_FF"                     
+//#define   STATION_PASSWORD1 "hetadatain@123"
 #define HOSTNAME "MQTT_Bridge"
 
 // Prototypes
@@ -116,18 +123,13 @@ void sendTime()
   
   Serial.print(timeFromNTP);
   
-  isConnected = false;
-
-  String ack_pulse_to_sub = "ready";
-  mqttClient.publish("hetadatainMesh/from/gateway", ack_pulse_to_sub.c_str());
-
-
-
+isConnected = false;
+String ack_pulse_to_sub = "ready";
+mqttClient.publish("hetadatainMesh/from/gateway", ack_pulse_to_sub.c_str());
 
 //String nMap = mesh.asNodeTree().toString();
- //Serial.print(mesh.asNodeTree().toString());
-
- //mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
+//Serial.print(mesh.asNodeTree().toString());
+//mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
 
  //String topic = "Nmap/from/gateway";
  
@@ -427,6 +429,8 @@ if(millis() == 60000 && testIP == getlocalIP())
   }
 
   if (myIP == getlocalIP() &&(mqttClient.connected() == false)) {
+            //taskSendLog.enable();
+
        if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","Ready! Reconnected");
       mqttClient.subscribe("hetadatainMesh/to/gateway");
@@ -455,13 +459,13 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
   if(msg == "online?"){
    //if(isConnected == true){
   mesh.sendSingle(from, String("online"));
-
      // }
     }
   
   else{
-    if (!mqttClient.connected() && isConnected == false){
-
+    if (!mqttClient.connected() || isConnected == false)
+    {
+      taskSendLog.disable();
       LittleFS.begin();
       File dataFile = LittleFS.open("offlinelog.txt", "a");
        dataFile.println(msg);
@@ -490,12 +494,13 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   memcpy(cleanPayload, payload, length+1);
   String msg = String(cleanPayload);
   free(cleanPayload);
-
   String targetStr = String(topic).substring(16);
 
-  if(targetStr == "gateway")
-  {Serial.println(msg + "pi seems online");
+      isConnected = true;
+      taskSendLog.enable();
 
+  if(targetStr == "gateway")
+  {
       isConnected = true;
       taskSendLog.enable();
    
