@@ -30,9 +30,11 @@
 
 #define OTA_PART_SIZE 1024 //How many bytes to send per OTA data packet
 
-bool isConnected;
+bool isConnected = false;
 
 #define MYTZ TZ_Asia_Kolkata
+ 
+uint32_t ack_to_node;
 
 
 static timeval tv;
@@ -48,15 +50,8 @@ extern "C" int clock_gettime(clockid_t unused, struct timespec *tp);
 
 AsyncWebServer server(80);
 
-
-//#define   MESH_PREFIX     "HetaDatain"                  
-//#define   MESH_PASSWORD   "Test@Run_1"              
-#define   MESH_PORT       5555                               
-// Add wi-fi credentials to connect with mqtt  broker
-//#define   STATION_SSID     "Hetadatain_GF"                     
-//#define   STATION_PASSWORD "hetadatain@123"               
-//#define   STATION_SSID1     "Hetadatain_FF"                     
-//#define   STATION_PASSWORD1 "hetadatain@123"
+             
+#define   MESH_PORT       5555          
 #define HOSTNAME "MQTT_Bridge"
 
 // Prototypes
@@ -101,38 +96,44 @@ int period;
 String m[12] = {"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"};
 String w[7] = {"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"};
 
-Task taskSendTime( TASK_MINUTE * 2 , TASK_FOREVER, &sendTime );   
+Task taskSendTime( TASK_MINUTE * 1 , TASK_FOREVER, &sendTime );   
 void sendTime()
 { 
   //Serial.print("getting timeStamp");
-    //DateTime now = rtc.now();
-  //  Serial.print(now.unixtime() / 86400L);
+  //  DateTime now = rtc.now();
+//  Serial.print(now.unixtime() / 86400L);
   gettimeofday(&tv, nullptr);
   clock_gettime(0, &tp);
   now = time(nullptr);
 
-  Serial.print("time:      ");
-  Serial.println((uint32_t)now);
+ // Serial.print("time:      ");
+  //Serial.println((uint32_t)now);
   int timeNow = ((uint32_t)now);
   // timeNow +=  timeNow + 19800;
-   String timeFromNTP = String(timeNow);
-  // String msg = String(now.unixtime() );
+  String timeFromNTP = String(timeNow);
+  //String msg = String(now.unixtime() );
   mesh.sendBroadcast(timeFromNTP);
+  
   Serial.print(timeFromNTP);
+  
+  isConnected = false;
+
+  String ack_pulse_to_sub = "ready";
+  mqttClient.publish("hetadatainMesh/from/gateway", ack_pulse_to_sub.c_str());
 
 
 
-String nMap = mesh.asNodeTree().toString();
+
+//String nMap = mesh.asNodeTree().toString();
  //Serial.print(mesh.asNodeTree().toString());
 
- mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
-    isConnected = false;
+ //mqttClient.publish("hetadatainMesh/from/gateway", nMap.c_str());
 
  //String topic = "Nmap/from/gateway";
  
  //mqttClient.publish(topic.c_str(), msg.c_str());
   
-  }
+ }
 String scanprocessor(const String& var)
 {
   if(var == "SCAN")
@@ -140,7 +141,7 @@ String scanprocessor(const String& var)
   return String();
 }
 
-Task taskSendLog( TASK_SECOND * 5 , TASK_FOREVER, &sendLog );   // Set task second to send msg in a time interval
+Task taskSendLog( TASK_SECOND * 2 , TASK_FOREVER, &sendLog );   // Set task second to send msg in a time interval
 
   void sendLog(){
          String logs;
@@ -408,7 +409,11 @@ if (!SD.begin(D8)) {
 
 void loop() {
   mesh.update();
-  period=millis()/1000;                                                    // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
+  period=millis()/1000; 
+  if(getlocalIP() == testIP){
+    isConnected = false;
+
+  }                                                   // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
 
   mqttClient.loop();
   //nMapClient.loop();
@@ -421,11 +426,11 @@ if(millis() == 60000 && testIP == getlocalIP())
     mqttClient.setServer(mqtt2, 1883);
   }
 
-  if (myIP == getlocalIP() &&( !mqttClient.connected())) {
+  if (myIP == getlocalIP() &&(mqttClient.connected() == false)) {
        if (mqttClient.connect("hetadatainMeshClient")) {
-      mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
-      mqttClient.subscribe("hetadatainMesh/to/+");
-      taskSendLog.enable();
+      mqttClient.publish("hetadatainMesh/from/gateway","Ready! Reconnected");
+      mqttClient.subscribe("hetadatainMesh/to/gateway");
+      //taskSendLog.enable();
        }
     } 
 
@@ -434,9 +439,9 @@ if(millis() == 60000 && testIP == getlocalIP())
     Serial.println("My IP is " + myIP.toString());
 
     if (mqttClient.connect("hetadatainMeshClient")) {
-      mqttClient.publish("hetadatainMesh/from/gateway","Ready!");
-      mqttClient.subscribe("hetadatainMesh/to/+");
-        taskSendLog.enable();
+      mqttClient.publish("hetadatainMesh/from/gateway","ready");
+      mqttClient.subscribe("hetadatainMesh/to/gateway");
+        //taskSendLog.enable();
 
     } 
   }
@@ -448,22 +453,23 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
  
   
   if(msg == "online?"){
-  // if(isConnected == true){
-    mesh.sendSingle(from, String("online"));
+   //if(isConnected == true){
+  mesh.sendSingle(from, String("online"));
 
-    //  }
+     // }
     }
   
   else{
-    if (!mqttClient.connected()){
+    if (!mqttClient.connected() && isConnected == false){
 
       LittleFS.begin();
       File dataFile = LittleFS.open("offlinelog.txt", "a");
        dataFile.println(msg);
        dataFile.close();
        LittleFS.end();
+       Serial.print("to card");
     }
-    else{
+    else {
   String topic = "hetadatainMesh/from/" + String(from);
  
   mqttClient.publish(topic.c_str(), msg.c_str());
@@ -478,6 +484,7 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
 }
 
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+
   char* cleanPayload = (char*)malloc(length+1);
   payload[length] = '\0';
   memcpy(cleanPayload, payload, length+1);
@@ -487,7 +494,11 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   String targetStr = String(topic).substring(16);
 
   if(targetStr == "gateway")
-  {
+  {Serial.println(msg + "pi seems online");
+
+      isConnected = true;
+      taskSendLog.enable();
+   
     if(msg == "getNodes")
     {
       auto nodes = mesh.getNodeList(true);
@@ -510,7 +521,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     }
     else
     {
-      mqttClient.publish("hetadatainMesh/from/gateway", "Client not connected!");
+     mqttClient.publish("hetadatainMesh/from/gateway", "Client not connected!");
     }
  
   
@@ -543,12 +554,12 @@ void time_is_set_scheduled() {
     constexpr int days = 30;
     time_machine_days += days;
     if (time_machine_days > 360) {
-      tv.tv_sec -= (time_machine_days - days) * 60 * 60 * 24;
+     // tv.tv_sec -= (time_machine_days - days) * 60 * 60 * 24;
       time_machine_days = 0;
     } else {
-      tv.tv_sec += days * 60 * 60 * 24;
+      //tv.tv_sec += days * 60 * 60 * 24;
     }
-    settimeofday(&tv, nullptr);
+   // settimeofday(&tv, nullptr);
   } else {
     showTime();
   }
