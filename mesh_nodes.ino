@@ -1,371 +1,221 @@
+    
+  #include "painlessMesh.h"
+  #include <MCP3008.h>
+  #include <LittleFS.h>
+  #include "FS.h"
+#include <Arduino.h>
+  #include <ModbusMaster.h>
 
-#include <ModbusMaster.h>
-#include <SD.h> 
-#include "painlessMesh.h"
-#include <SPI.h>
-#include <MCP3008.h>
-  
-//define pin connections
+
+#define relayPin D3
+
+#define MAX485_DE_RE      D4
+
 #define CS_PIN D8
 #define CLOCK_PIN D5
 #define MOSI_PIN D7
 #define MISO_PIN D6
-#define sd_PIN D8
 
+#define sendLed D1    
+#define connLed D0
 
-String   mesh_ssid    ;                     // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
-String   mesh_Pass        ;                   // Mesh Password should be same for all  nodes in Mesh Network
-#define   MESH_PORT       5555                                      // Mesh Port should be same for all  nodes in Mesh Network 
-#define FILE_LINE_LENGTH        81  // a line has 80 chars 
+#define CS_PIN D8
+#define CLOCK_PIN D5
+#define MOSI_PIN D7
+#define MISO_PIN D6
+//#define   MESH_PREFIX     "HetaDatain"                         // Mesh Prefix (SSID) should be same for all  nodes in Mesh Network
+//#define   MESH_PASSWORD   "Test@Run_1"                         // Mesh Password should be same for all  nodes in Mesh Network
+#define   MESH_PORT       5555                                      // Mesh Port should be same for all  nodes in Mesh Network
 
-
-// function declaration
-long ts_epoch;
-char txtLine[FILE_LINE_LENGTH];
-char postdata [FILE_LINE_LENGTH];
-bool readCondition = true;  // Has to be defined somewhere to trigger SD read
-String buffer;
-int a[70],b[70]; // We can change these to 16 bit to theorotically halve the memory space
-uint32_t root = 314262534; 
-unsigned long currentMillis = millis();
-long interval = 1000;   
-unsigned long period=0;  
-
-String id ;
-String msgMfd;
-String msgMcp;
-
-
-int LED = D0;
-int ledState = LOW;
-
-uint16_t val, val1, val2, val3, val4, val5, val6, val7 ;
-
-String formattedDate;
-String dayStamp;
-String timeStamp;
-
-
-
-bool ackStatus = false ;
-
-uint8_t mfd;
-uint8_t mcp ;
-
-long timeIndex = 0;
-
-ModbusMaster node;
-Scheduler userScheduler;
+Scheduler userScheduler; // to control your personal task
 painlessMesh  mesh;
-
-// User stub
-void sendMfd() ; 
-void writeToCard();
-void postFileContent(const char * path );
-void loggedData();
-void manageTasks();
-void sendMfd();
-void sendMcp();
-double readWattage();
-double readWattageY();
-double readWattageB();
-double readWattageR();
-double readCurrent();
-double readPf();
-double readLineVoltage();
-double readWH();
-double readVa();
-double readVah();
-String readMfd();
-String readMcp();
-
-Task taskSendMfd( TASK_MINUTE * 2 , TASK_FOREVER, &sendMfd );   // Set task second to send msg in a time interval
+MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
+ModbusMaster node;
 
 
-
-void sendMfd() {
-
-  ledState = HIGH;
-
-  //readMfd();
-
-  mesh.sendSingle(root, String("online?"));     
-
-  ackStatus = false;
+int relay_pin_0_min, relay_pin_0_max,relay_pin_1_min, relay_pin_1_max,relay_pin_2_min, relay_pin_2_max,relay_pin_3_min, relay_pin_3_max,relay_pin_04_min, relay_pin_04_max,relay_pin_05_min, relay_pin_05_max,relay_pin_06_min, relay_pin_06_max,relay_pin_07_min, relay_pin_07_max;                               // Mesh Port should be same for all  nodes in Mesh Network
+  int device_type;
+  int mfd_dev_id;
+  uint8_t sendDelay = 2;
+  unsigned long period=0; 
+  uint16_t val, val1, val2, val3, val4, val5, val6, val7 ;
+  String id; 
+  int wdt = 0; 
+  int ts_epoch;
+  int timeIndex;
+  int pos;
+  uint32_t root;
   long previousMillis = 0;  
-  unsigned long currentMillis = millis();
+  int mcp = 0, mfd = 0, pins = 0;
+  int first_Reg, second_Reg;
+String msgMfd_payload;
+String msgMfd_payload1;
 
-if(currentMillis - previousMillis > interval) {
-   // previousMillis = currentMillis;   
- while (ackStatus = false)
- {
-    writeToCard();
-  }
-  }
- node.clearResponseBuffer();
+  String msgSd;
+  uint8_t interval = 1000;
+  bool ackStatus;
+  // User stub
+   void updateTime();
+    String readMcp();
+   void writeToCard();
+      void writeTimeToCard();
+  String readMfd();
+void preTransmission();
+void postTransmission();
+bool dataStream();
+void cpu_chill();
+boolean read_Mfd_Task();
+
+   void sendMessage() ;// Prototype so PlatformIO doesn't complain
+  void sendMsgSd();
+  void blink_con_led();
+  Task taskUpdateTime( TASK_SECOND * 1 , TASK_FOREVER, &updateTime );   // Set task second to send msg in a time interval (Here interval is 4 second)
+  
+  void updateTime(){
+    digitalWrite(connLed, LOW);
+    wdt++;
+    ts_epoch++;
+    }
+
+void preTransmission()
+{
+  //digitalWrite(MAX485_DE_RE, 1);
+  digitalWrite(MAX485_DE_RE, 1);
+  delay(40);
+}
+
+void postTransmission()
+{
+ // digitalWrite(MAX485_DE_RE, 0);
+  digitalWrite(MAX485_DE_RE, 0);
+}
+
+   Task taskConnLed( TASK_SECOND * 1 , TASK_FOREVER, &blink_con_led );
+  Task taskSendMessage( TASK_MINUTE * sendDelay , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval (Here interval is 4 second)
+  Task taskSendMsgSd( TASK_SECOND * 3 , TASK_FOREVER, &sendMsgSd );   // Set task second to send msg in a time interval
+  Task taskWriteToCard( TASK_MINUTE * sendDelay , TASK_FOREVER, &writeToCard );
+  Task taskReadMfd( TASK_MINUTE * sendDelay, TASK_FOREVER, &read_Mfd_Task );   // Set task second to send msg in a time interval (Here interval is 4 second)
+
+ 
+  // If you want to receive sensor readings from this node, write code in below function....
+
+  void sendMessage() {
+       digitalWrite(LED_BUILTIN, LOW);  
+
+   if (mesh.isConnected(root)){
+  Serial.print("found root, pinging . . . ");
+  taskWriteToCard.disable();
+   String msg = "online?";                                       // You can write node name/no. here so that you may easily recognize it        
+   uint32_t target = root;                                         // Target is Node id of the node where you want to send sms (Here, write node id of mqtt bridge (Root Node))
+   mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
+   Serial.println(msg);}
+   else{
+     taskWriteToCard.enable();
+       Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
+
+   }
+    digitalWrite(sendLed, LOW);  
+
    } 
 
-
-Task taskSendMcp( TASK_MINUTE * 2 , TASK_FOREVER, &sendMcp );
-
-
-  void sendMcp(){
-  ledState = HIGH;
-  digitalWrite(CS_PIN,LOW);    
-  ackStatus = false;
-  mesh.sendSingle(root, String("online?"));                           
-  
-  long previousMillis = 0;  
-  unsigned long currentMillis = millis();
-
-
- if(currentMillis - previousMillis > interval) {
-   // previousMillis = currentMillis;   
- while (ackStatus = false)
- {
-      
-      Serial.print("root not found, writing to card");
-    writeToCard();
-  }
- }
-
-  }
-
-
- Task taskWriteToCard( TASK_MINUTE * 2 , TASK_FOREVER, &writeToCard );
-
-  Task taskWriteToCardNoAck( TASK_IMMEDIATE , TASK_ONCE, &writeToCard );
-
- void writeToCard()
- { 
-    ledState = HIGH;
-
-
-
-   if(mcp == 1 && mfd ==1){ 
-  String msg = String(ts_epoch)+ ",";
-  msg += readMcp() + ",";
-  msg += readMfd();
-  msg += "from sd";
-
-  msg += String(timeIndex);
-
-
-   digitalWrite(sd_PIN,LOW);    
-      SD.begin(sd_PIN);
-    File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
-  if (dataFile) {
-    dataFile.println(msg);
-    dataFile.close();
-     Serial.println("to SD Card"); 
-    Serial.println(msg);
-    Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");}
-  else {
- Serial.println("error opening  offlinelog.txt"); 
-    }
-    timeIndex++;
-
-    SD.end();
-    digitalWrite(sd_PIN,HIGH);    
-    }
-
-       else if (mfd == 1 ){  
-       String msg = String(ts_epoch)+ ",";
-       msg += readMfd();
-       msg += "from sd";
-       msg += String(timeIndex);
-    digitalWrite(sd_PIN,LOW);    
-      SD.begin(sd_PIN);
-    File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
-// if the file is available, write to it:
-  if (dataFile) {
-    dataFile.println(msg);
-    dataFile.close();
-    // print to the serial port too:
-     Serial.println("to SD Card"); 
-    Serial.println(msg);
-    Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");}
-  // if the file isn't open, pop up an error:
-  else {
-    Serial.println("error opening  offlinelog.txt"); 
-    }
-    timeIndex++;
-
-    SD.end();
-       digitalWrite(sd_PIN,HIGH);  
-        
-        }
-
-       else if (mcp == 1 ){  
-       String msg = String(ts_epoch)+ ",";
-       msg += readMcp();
-       msg += "from sd";
-       msg += String(timeIndex);
-    digitalWrite(sd_PIN,LOW);    
-      SD.begin(sd_PIN);
-    File dataFile = SD.open("offlinelog.txt", FILE_WRITE);
-// if the file is available, write to it:
-  if (dataFile) {
-    dataFile.println(msg);
-    dataFile.close();
-    // print to the serial port too:
-     Serial.println("to SD Card"); 
-    Serial.println(msg);
-    Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");}
-  // if the file isn't open, pop up an error:
-  else {
-    Serial.println("error opening  offlinelog.txt"); 
-    }
-    timeIndex++;
-
-    SD.end();
-       digitalWrite(sd_PIN,HIGH);  
-        
-        }
-
-
-
-
-  } 
-
-  
-  Task taskLoggedData(TASK_SECOND * 3 , TASK_FOREVER , &loggedData );
-
- void loggedData(){
-      
-    } 
  
-
-
- Task taskManageTasks( TASK_MINUTE * 2 , TASK_FOREVER, &manageTasks );
-
-void manageTasks(){
-  
-  
-   if( (WiFi.RSSI()) == 31 ){
-     taskWriteToCard.enable();
-         digitalWrite(LED, LOW);   
-
-     }  else {
-
-        taskWriteToCard.disable();
-        taskLoggedData.enable();
-  //    digitalWrite(LED, HIGH);   
-
-      }
-
-
- 
-  }
-
-
-
+  // Msg recived by node. If you want to perform any task by receiving msg, write code in the below function....
 void receivedCallback( uint32_t from, String &msg ) {
- Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
-
- if(msg == "online"){
-  Serial.print("got ack, root online");
-  if (mcp == 1 && mfd == 1 )
+  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
+ if (msg=="online")
   {
-    msgMfd = readMfd();
-    msgMcp = readMcp();
-    String xmsg = String(ts_epoch)+ "," ;
-    xmsg += msgMfd + msgMcp;
-  
-    mesh.sendSingle(root, xmsg );
-    Serial.println(msg);
-    ackStatus = true;
-}
-
- else if(mfd == 1){
-    String xmsgMfd =  String(ts_epoch) + ",";
-    xmsgMfd+= readMfd();
-   // msgMfd +=  "," + String(ts_epoch) ;
-    mesh.sendSingle(root, xmsgMfd );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
-    Serial.println(msgMfd);
-    ackStatus = true;
- }
- else if(mcp == 1){
-    ledState = HIGH;
-   String xmsgMcp = String(ts_epoch)+ ",";
-    xmsgMcp += readMcp();
-   // msgMcp +=  "," + String(ts_epoch) ;
-    mesh.sendSingle(root, xmsgMcp );
-    Serial.println(msgMcp);
-    ackStatus = true;
-  
-  }
-   }
-   String strMsg = String(msg);
-   ts_epoch = strMsg.toInt();}
-
-void newConnectionCallback(uint32_t nodeId) {
-   Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
-
-
-
-SD.begin(sd_PIN);
-  File file = SD.open("offlinelog.txt", FILE_READ); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
-//#endif
-  if (!file) {
-    Serial.println("Failed to open file for reading");
-    return;
-  }
-    // String logs;
-    String buffer;
-    uint8_t i = 0;
-while (file.available())
-//  while (buffer != NULL())
-// for (int i = 0; i < 20 ; i++) 
-{ 
-
-
-  
-     buffer = file.readStringUntil('\n');
-   // Serial.println(buffer); //Printing for debugging purpose         
-     
- 
- 
-  String   msg = buffer; 
-     // msg += " loggeddata ";
-      mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg)) 
+   digitalWrite(sendLed, HIGH);  
+    // You can write node name/no. here so that you may easily recognize it
+    if (mcp == 1 && mfd == 1 ){
+      String msg = msgMfd_payload;
+      mesh.sendSingle(root,msg);
+      msg = msgMfd_payload1;
+      mesh.sendSingle(root, msg); 
+      msg = readMcp();
+      mesh.sendSingle(root, msg );                                             // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
+   wdt = 0;
+   ackStatus = true;
+   taskWriteToCard.disable();
+  // taskIdle.enable();
       
-      Serial.println(msg); 
- 
-}   
- 
- 
-  file.close();
-  Serial.println(F("DONE Reading"));
-  String ackMsg = id ;
-  ackMsg += "sent from sd card";
-  mesh.sendSingle(root, ackMsg);
-  SD.remove("offlinelog.txt");
-      SD.end();
+      }        
+      else if (mfd == 1 ){
+       // taskDataStream.enable();
+      
+        String msg =  msgMfd_payload;
+        mesh.sendSingle(root, msg);
+        Serial.println(msg);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
+         msg =  msgMfd_payload1;
+        mesh.sendSingle(root, msg);
+        Serial.println(msg);
+        wdt = 0;
+   ackStatus = true;
+   taskWriteToCard.disable();
 
-//SD.remove(offlinelog.txt"); 
-   //file = SD.open("offlinelog.txt", FILE_WRITE);                          //deleting file after data is sent
-   //file.close();
+     // taskIdle.enable();
+
+        }
+        else if(mcp == 1 ){
+  String msg = readMcp();
+   mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
+   Serial.println(msg);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
+   wdt = 0;
+   ackStatus = true;
+   taskWriteToCard.disable();
+     // taskIdle.enable();
+
+        }
+           digitalWrite(sendLed, LOW);  
+
+   }
+
+
+   String strMsg = String(msg);
+   ts_epoch = strMsg.toInt();
+ }
+
+  void newConnectionCallback(uint32_t nodeId) {
+    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+           String nMap = mesh.asNodeTree().toString();
+         mesh.sendSingle(root, nMap);
+        
+         if(mesh.startDelayMeas(root))
+         {  
+            taskSendMsgSd.enable();
+            taskWriteToCard.disable();
+           String configFile = String( id + "," + root + ","  + mcp + ","  + mfd + ","  + pins + ","  + sendDelay);
+            mesh.sendSingle(root, configFile);
+            }
+            taskConnLed.enable();
+
+ }
+
+  void changedConnectionCallback() {
+  Serial.printf("Changed connections\n");
+  Serial.printf("Changed connections\n");
+  String nMap = mesh.asNodeTree().toString();
+  mesh.sendSingle(root, nMap);
+ }
+
+  void nodeTimeAdjustedCallback(int32_t offset) {
+    Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
+ }
+
+ void delayReceivedCallback(uint32_t from, int32_t delay) {
+   Serial.printf("Delay to node %u is %d us\n", from, delay);
+ }
+
+  void setup() {
+  pinMode(MAX485_DE_RE, OUTPUT);
+  // Init in receive mode
+  digitalWrite(MAX485_DE_RE, 0);
   
- 
-  
-}
-
-void changedConnectionCallback() {
- Serial.printf("Changed connections\n");
-}
-
-void nodeTimeAdjustedCallback(int32_t offset) {
-   Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
-}
-
-void setup() {
   Serial.begin(9600, SERIAL_8E1);
-  node.begin(1, Serial);
-
-  SD.begin(D4);
   
-  File configFile = SD.open("/config.json", "r");
+
+  LittleFS.begin();
+
+  File configFile = LittleFS.open("config.json", "r");
   if (!configFile) {
     Serial.println("Failed to open config file");
   }
@@ -383,113 +233,418 @@ void setup() {
   // use configFile.readString instead.
   configFile.readBytes(buf.get(), size);
 
-  StaticJsonDocument<200> doc;
+  StaticJsonDocument<600> doc;
   auto error = deserializeJson(doc, buf.get());
   if (error) {
     Serial.println("Failed to parse config file");
   }
-
-  const char* MESH_PREFIX = doc["MESH_PREFIX"];
-  const char*  MESH_PASSWORD = doc["MESH_PASSWORD"];
-  const char*  ROOT = doc["root"];
-  const char*  ID = doc["id"];
-  const char*  MFD = doc["mfd"];
+  const char* MESH_PREFIX = doc["ssid"];
+  const char* MESH_PASSWORD = doc["password"];
+  const char* ID = doc["id"];
+  const char* ROOT = doc["root"];
   const char* MCP = doc["mcp"];
+  const char* MFD = doc["mfd"];
+  const char* PINS = doc["pins"];
+  const char* DELAY = doc["delay"];
 
-  // Real world application would store these values in some variables for
-  // later use.
+   
+  const char* pin1min = doc["pin1min"];
+  const char* pin1max = doc["pin1max"];
 
-  Serial.print("Loaded : ");
-  Serial.println(MESH_PREFIX);
-  mesh_ssid = MESH_PREFIX;
-  mesh_Pass = MESH_PASSWORD;
-  //Serial.print("Loaded accessToken: ");
-  Serial.println(MESH_PASSWORD);
-  root = atoi(ROOT);
-    Serial.println(root);
+relay_pin_0_min = atoi(pin1min);
+relay_pin_0_max = atoi(pin1max);
+Serial.println(relay_pin_0_min );
+Serial.println(relay_pin_0_max );
+
+ 
+ const char* pin2min = doc["pin2min"];
+  const char* pin2max = doc["pin2max"];
+
+relay_pin_1_min = atoi(pin2min);
+relay_pin_1_max = atoi(pin2max);
+Serial.println(relay_pin_1_min );
+Serial.println(relay_pin_1_max );
+
+ 
+   const char* pin3min = doc["pin3min"];
+  const char* pin3max = doc["pin3max"];
+
+relay_pin_2_min = atoi(pin3min);
+relay_pin_2_max = atoi(pin3max);
+Serial.println(relay_pin_2_min );
+Serial.println(relay_pin_2_max );
+
+ 
+ const char* pin4min = doc["pin4min"];
+  const char* pin4max = doc["pin4max"];
+  relay_pin_3_min = atoi(pin4min);
+relay_pin_3_max = atoi(pin4max);
+Serial.println(relay_pin_3_min );
+Serial.println(relay_pin_3_max );
+ 
+   const char* pin5min = doc["pin5min"];
+  const char* pin5max = doc["pin5max"];
+ 
+relay_pin_04_min = atoi(pin5min);
+relay_pin_04_max = atoi(pin5max);
+Serial.println(relay_pin_04_min );
+Serial.println(relay_pin_04_max );
+
+ const char* pin6min = doc["pin6min"];
+  const char* pin6max = doc["pin6max"];
+
+relay_pin_05_min = atoi(pin6min);
+relay_pin_05_max = atoi(pin6max);
+Serial.println(relay_pin_05_min );
+Serial.println(relay_pin_05_max );
+ 
+    const char* pin7max = doc["pin7max"];
+   const char* pin7min = doc["pin7min"];
+
+
+relay_pin_06_min = atoi(pin7min);
+relay_pin_06_max = atoi(pin7max);
+Serial.println(relay_pin_06_min );
+Serial.println(relay_pin_06_max );
+
+ 
+  const char* pin8max = doc["pin8max"];
+ const char* pin8min = doc["pin8min"];
+
+relay_pin_07_min = atoi(pin8min);
+relay_pin_07_max = atoi(pin8max);
+Serial.println(relay_pin_07_min );
+Serial.println(relay_pin_07_max );
+   
+
+   
+  sendDelay = atoi(DELAY);
+  Serial.print("Loaded id: ");
+    id = atoi(ID);
+  Serial.println(ID);
+  Serial.print("Loaded root id: ");
+   root = atoi(ROOT);
+  Serial.println(ROOT);
+  mcp = atoi(MCP);
+    Serial.println(mcp);
+
   mfd = atoi(MFD);
-  id = atoi(ID);
-  Serial.println(id);
-
   Serial.println(mfd);
-  Serial.println(mcp);
+  const char* MFD_SERIAL_ID = doc["mfd_dev_id"];
+  mfd_dev_id = atoi(MFD_SERIAL_ID);
+  const char* DEV_TYPE = doc["device_type"];
+  device_type = atoi(DEV_TYPE);
+
+   pins = atoi(PINS);
+  Serial.print("Loaded MCP pins: " );
+Serial.print(pins);
+  Serial.print(" loaded Send Delay: " );
+Serial.print(sendDelay);
+
+File timeFile = LittleFS.open("time.txt", "r");
+  if (timeFile) {
+     String timeTemp = timeFile.readStringUntil('\n');
+
+    ts_epoch = timeTemp.toInt();
+    
+    timeFile.close();
+    }
+  else {
+    Serial.println("error opening  time.txt"); 
+    }  LittleFS.end();
+  
 
 
+
+  //mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
+  // mesh.setDebugMsgTypes( ERROR | DEBUG );  // set before init() so that you can see startup messages
+
+    mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT );
+   //mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
+   mesh.setContainsRoot(true);
+
+    mesh.onReceive(&receivedCallback);
+   mesh.onNewConnection(&newConnectionCallback);
+   mesh.onChangedConnections(&changedConnectionCallback);
+   mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
+   mesh.onNodeDelayReceived(&delayReceivedCallback);
+
+    userScheduler.addTask( taskSendMessage );
+    userScheduler.addTask( taskUpdateTime );
+    userScheduler.addTask(taskSendMsgSd);
+    userScheduler.addTask(taskWriteToCard);
+    userScheduler.addTask(taskConnLed);
+        userScheduler.addTask(taskReadMfd);
+
+
+
+ if(mfd == 1)
+ {
+   taskReadMfd.enable();
+  }else{
+   taskSendMessage.enable();
+
+  }
+
+   taskUpdateTime.enable();
+   pinMode(A0, INPUT);                                                    // Define A0 pin as INPUT
+   pinMode(LED_BUILTIN, OUTPUT);                                          // Define LED_BUILTIN as OUTPUT
+   digitalWrite(LED_BUILTIN, HIGH);  
+    pinMode(sendLed, OUTPUT);   
+   pinMode(connLed, OUTPUT);    
+     pinMode(relayPin, OUTPUT);  
+   digitalWrite(relayPin, LOW);                                    // Initially the LED will be off
+
+ 
+  node.preTransmission(preTransmission);//mfd callbacks 
+  node.postTransmission(postTransmission);
+  }
+
+  void loop() {
+   // it will run the  scheduler as well
+
+  period=millis()/1000;                                                    // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
+
+    mesh.update();
+    if(wdt == 180 ){
+      writeTimeToCard();
+      while(1);
+      } 
+
+             //digitalWrite(LED_BUILTIN,LOW);                              // LED will be ON when node in not deepSleep mode                                     
+
+   /* if (period>60)                                                         // When period will be > 60 seconds, deep sleep mode will be active
+   {
+      mesh.stop();
+  ESP.deepSleep(300e6);                                                    // deepSleep mode will be active for 300*10^6 microseconds, i.e. for 300 seconds                                                         
+  digitalWrite(LED_BUILTIN,HIGH); 
+   }*/
+ }
+
+  String readMcp()
+ {{
+   String msgMcp;
+  val = adc.readADC(0);
+  Serial.println(val);
+  val1 = adc.readADC(1);
+  Serial.println(val1);
+  val2 = adc.readADC(2); 
+  Serial.println(val2);
+  val3 = adc.readADC(3);
+  Serial.println(val3);
+  val4 = adc.readADC(4);
+  Serial.println(val4);
+  val5 = adc.readADC(5);
+  Serial.println(val5);
+  val6 = adc.readADC(6); 
+  Serial.println(val6);
+  val7 = adc.readADC(7);
+  Serial.println(val7);
+
+msgMcp = String(ts_epoch);
+if(mfd == 1 ){
+msgMcp += "," + id +"C";}
+else
+{
+  msgMcp += "," + id;
+}
+
+
+msgMcp += "," + String(device_type);
+
+
+
+if(pins == 1 || pins > 1  ){
+
+msgMcp += "," + String (val); 
+trig_Relay(val,relay_pin_0_max, relay_pin_0_min);
+}if(pins == 2 || pins > 2  ){
+
+msgMcp += "," + String (val1); 
+trig_Relay(val1, relay_pin_1_max, relay_pin_1_min );
+}if(pins == 3 || pins > 3  ){
+msgMcp += "," + String (val2); 
+trig_Relay(val1, relay_pin_2_max, relay_pin_2_min );
+}if(pins == 4 || pins > 4  ){
+
+msgMcp += "," + String (val3); 
+trig_Relay(val1, relay_pin_3_max, relay_pin_3_min );
+
+}if(pins == 5 || pins > 5  ){
+
+msgMcp += "," + String (val4); 
+trig_Relay(val1, relay_pin_04_max, relay_pin_04_min );
+
+}if(pins == 6 || pins > 6  ){
+
+msgMcp += "," + String (val5); 
+trig_Relay(val1, relay_pin_05_max, relay_pin_05_min );
+
+}if(pins == 7|| pins > 7 ){
+
+msgMcp += "," + String (val6); 
+trig_Relay(val1, relay_pin_06_max, relay_pin_06_min );
+
+}if(pins == 8 || pins > 8  ){
+
+msgMcp += "," + String (val7); 
+trig_Relay(val1, relay_pin_07_max, relay_pin_07_min );
 
     
 
+}return msgMcp;
+ }
+ }
+
+void trig_Relay(int thres ,int relay_max, int relay_min){
+if (thres >= relay_max || thres <= relay_min){
+  digitalWrite(relayPin, HIGH);
+}
+
+}
+
+
+
+void sendMsgSd(){
+
+LittleFS.begin();
+
+  File file = LittleFS.open("offlinelog.txt","r"); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
+//#endif
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    taskSendMsgSd.disable();
+          pos = 0;
+          timeIndex = 0;
+             return;
+  }
+    // String logs;
+    String buffer ;
+    uint8_t i = 0;
+ for (int i = 0; i < 1 ; i++) 
+{ 
+      file.seek(pos);
+     buffer = file.readStringUntil('\n');
+   // Serial.println(buffer); //Printing for debugging purpose         
+       msgSd = buffer; 
+  if(buffer != ""){
+
+      mesh.sendSingle(root, msgSd );                                       
+      Serial.println(msgSd); 
+      pos = file.position();
+  }
  
+  file.close();
+  Serial.println(F("DONE Reading"));
+ // if (pos == file.size()){
+  }
+    if (buffer == "") { 
+      String ackMsg = id ;
+      ackMsg += "sent from sd card";
+      mesh.sendSingle(root, ackMsg);
+      LittleFS.remove("offlinelog.txt");
+  }
 
-   mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
-  //mesh.setDebugMsgTypes( ERROR | DEBUG | CONNECTION);  // set before init() so that you can see startup messages
+      LittleFS.end();
 
-  mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT );
-  //mesh.init( MESH_PREFIX, MESH_PASSWORD, MESH_PORT, WIFI_AP_STA, 6 );
-  mesh.setContainsRoot(true);
-  
-  
-  
-  mesh.onReceive(&receivedCallback);
-  mesh.onNewConnection(&newConnectionCallback);
-  mesh.onChangedConnections(&changedConnectionCallback);
-  mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
-  mesh.onNodeDelayReceived(&delayReceivedCallback);
+}
 
-  userScheduler.addTask( taskSendMfd );
-  userScheduler.addTask(taskWriteToCard);
-  userScheduler.addTask(taskSendMcp);
-  userScheduler.addTask(taskLoggedData);
-  userScheduler.addTask(taskManageTasks);
-//  userScheduler.addTask(dataStream);
-  //userScheduler.addTask(taskGetTimeStamp);
-  userScheduler.addTask(taskWriteToCardNoAck);
 
-  //taskLoggedData.enable();
-taskManageTasks.enable();
-//taskGetTimeStamp.enable();
-if(mfd == 1){
-    taskSendMfd.enable();
+void writeToCard(){
+    // taskIdle.disable();
 
-  }else if(mcp == 1){
-    taskSendMcp.enable();
+{  Serial.print("write to card works");
+            taskConnLed.disable();
+        digitalWrite(sendLed, HIGH);
+
+     if (ackStatus == false)
+     {
+
+        String msg, msg_1, msg_2;
+        if (mfd == 1  && mcp == 1){
+
+          msg = msgMfd_payload;
+          msg_1 = msgMfd_payload1;
+          msg_2 = readMcp();
+        }
+       if (mfd == 1 ){
+       
+         msg =  msgMfd_payload;
+         msg_1 = msgMfd_payload1;
+       
+      
+       }
+          if (mcp == 1 )
+          {msg += readMcp();}
+             Serial.println(msg);
+             
+
+      LittleFS.begin();
+    File dataFile = LittleFS.open("offlinelog.txt", "a");
+    if(dataFile.size() > 4e+6){
+        Serial.print("memory full");
+        digitalWrite(sendLed, LOW);
+
+    }
+// if the file is available, write to it:
+  if (dataFile.size() < 4e+6) {
+    if(mfd == 1 && mcp == 0 ){
+      dataFile.println(msg);
+      dataFile.println(msg_1);
+
+    }
+        else if(mfd == 1 && mcp == 1){
+        dataFile.println(msg);
+        dataFile.println(msg_1);
+        dataFile.println(msg_2);
+    }
+else{
+    dataFile.println(msg);
     }
 
+    dataFile.close();
+    // print to the serial port too:
+     Serial.println("to SD Card"); 
+    Serial.println(msg);
+    Serial.println(msg_1);
+    Serial.println(msg_2);
+    Serial.println("WiFi signal: " + String(WiFi.RSSI()) + "db");}
+  // if the file isn't open, pop up an error:
+  else {
+    Serial.println("error opening  offlinelog.txt"); 
+    }
+    timeIndex++;
+    wdt = 0;
+    ackStatus = false;
 
-  pinMode(A0, INPUT);   // Define A0 pin as INPUT
- pinMode(LED, OUTPUT);
+    LittleFS.end();
+        
+        }
+                digitalWrite(sendLed, LOW);
+                  // taskIdle.enable();
 
-                           // LED will be ON when node is writibng to sd card                                
-// dataStream.enable();
-       digitalWrite(sd_PIN,HIGH);  
- 
+
+    }
+
 }
 
-void loop() {
- 
-       digitalWrite(LED, ledState);
-
-  // it will run the user scheduler as well
-
-uint16_t seconds=millis()/1000;     
-  ts_epoch + seconds ;                                            // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
- 
-  mesh.update();
- //Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
-
- 
- 
-  
- /* if (period>60)                                                         // When period will be > 60 seconds, deep sleep mode will be active
-  {
-     mesh.stop();
- ESP.deepSleep(300e6);                                                    // deepSleep mode will be active for 300*10^6 microseconds, i.e. for 300 seconds                                                   
- digitalWrite(LED_BUILTIN,HIGH); 
-  }*/
-}
-void delayReceivedCallback(uint32_t from, int32_t delay) {
-  Serial.printf("Delay to node %u is %d us\n", from, delay);
+void writeTimeToCard()
+{
+      LittleFS.begin();
+      LittleFS.remove("time.txt");
+    File dataFile = LittleFS.open("time.txt", "w");
+  if (dataFile) {
+    dataFile.println(ts_epoch);
+    dataFile.close();
+    }
+  else {
+    Serial.println("error opening  time.txt"); 
+    }  LittleFS.end();
 }
 
+void blink_con_led(){
+  digitalWrite(connLed, HIGH);
+}
 
 int bin2dec(String sb)
 {
@@ -640,171 +795,144 @@ int validDenominator(int number)
    return number;
 }
 
-double readRegister(int add){
-  Serial.print("reading registers");
-      int result =  node.readHoldingRegisters(add, 2);
-     double Wattage;
-      if (result == node.ku8MBSuccess){
-          Serial.print("reading buffer");
+double readWattageR(int add){
 
-   int a =node.getResponseBuffer(0);
-    int b =node.getResponseBuffer(1);
-      Wattage = RSmeter(a, b);
-      }
-     else if (result == node.ku8MBIllegalDataAddress)
-     {
-
-       Serial.print("wrong address");
-
-     }
-     else if (result == node.ku8MBInvalidCRC)
-     {
-
-       Serial.print("wrong crc");
-
-     }
-     else if (result == node.ku8MBSlaveDeviceFailure)
-     {
-
-       Serial.print("timed out");
-
-     }
-
-
-
-     //node.clearResponseBuffer();
+    //dataStream(add );
+    if(dataStream(add) == true){
+      double Wattage = NAN;
+      Wattage = RSmeter(first_Reg, second_Reg);
     double WATT = Wattage;
-    return WATT;
-  }
-
-
-   double readWattage(){
-     double Wattage = RSmeter(a[0], b[0]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readWattageR(){
-     double Wattage = RSmeter(a[2], b[2]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readWattageY(){
-     double Wattage = RSmeter(a[3], b[3]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readWattageB(){
-     double Wattage = RSmeter(a[4], b[4]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readCurrentR(){
-     double Wattage = RSmeter(a[26], b[26]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readCurrentY(){
-     double Wattage = RSmeter(a[27], b[27]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readCurrentB(){
-     double Wattage = RSmeter(a[28], b[28]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readPf(){
-     double Wattage = RSmeter(a[3], b[3]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readVll(){
-     double Wattage = RSmeter(a[3], b[3]);
-    double WATT = Wattage;
-    return WATT;
-  }
-    double readR(){
-     double Wattage = RSmeter(a[22], b[22]);
-    double WATT = Wattage;
-    return WATT;
-  }
-double readY(){
-     double Wattage = RSmeter(a[23], b[23]);
-    double WATT = Wattage;
-    return WATT;
-  }
-  double readB(){
-     double Wattage = RSmeter(a[24], b[24]);
-    double WATT = Wattage;
-    return WATT;
-  }
-String readMfd(){
-  ledState = HIGH;
-
- int i=100,j=0;
-  while(i<160)
-  {
-    int result =  node.readHoldingRegisters(i, 2);
-    a[j] =node.getResponseBuffer(0);
-    b[j] =node.getResponseBuffer(1);
-    i=i+2;
-    j++;
-  }
-
+    return WATT;}
     
-   msgMfd = id   ;     
-    // msgMfd +=  "," + String(readRegister(106));              //KW
-    msgMfd += "," + String(readWattage());                //wy
-    msgMfd += "," + String(readWattageR());//WR
-    msgMfd += "," + String(readWattageY());//WB
-    msgMfd +=  "," + String(readWattageB());//Iavg
-    msgMfd +=  "," + String(readCurrentR());//Iavg
-    msgMfd +=  "," + String(readCurrentY());//Iavg
+  }
+bool dataStream(int one ){
+  first_Reg = 0 ;
+  second_Reg = 0 ;
+      node.clearResponseBuffer();
+        delay(60);
+  int   result =  node.readHoldingRegisters(one, 2 );        //Don't change this EVER!!
+    if (result == node.ku8MBSuccess){ 
+    first_Reg =node.getResponseBuffer(0);
+    second_Reg =node.getResponseBuffer(1);
+      return true;
+    }
+    else{
+      node.clearResponseBuffer();  
+      delay(60);
+      result =  node.readHoldingRegisters(one, 2 );//Don't change this EVER!!
+    if (result == node.ku8MBSuccess){ 
 
-    msgMfd += ","  + String(readCurrentB()) ; //Vll
-    msgMfd += ","  + String(readR()) ;//pf
-    msgMfd += ","  + String(readY()) ;//pf
-    msgMfd += "," + String(readB());//KVA
+      first_Reg =node.getResponseBuffer(0);
+      second_Reg =node.getResponseBuffer(1);
+    }else{
+      node.clearResponseBuffer();  
+      delay(60);
+      result =  node.readHoldingRegisters(one, 2 );//Don't change this EVER!!
+    if (result == node.ku8MBSuccess){ 
+
+      first_Reg =node.getResponseBuffer(0);
+      second_Reg =node.getResponseBuffer(1);
+    }
+      }
+      return true;
+   }
+
+}
+
+String readMfd(){
+    node.begin(mfd_dev_id, Serial);
+  String msgMfd; 
+
+
+  msgMfd = String(ts_epoch);
+  msgMfd += "," + id +"A";
+  msgMfd += "," + String(device_type);
+
+  if (dataStream() == true){
+    msgMfd += "," + String(readWattageR(100)); 
+    msgMfd += "," + String(readWattageR(102));//WR
+    msgMfd += "," + String(readWattageR(104));//WB
+    msgMfd +=  "," + String(readWattageR(106));//Iavg
+    msgMfd += "," + String(readWattageR( 108)); 
+    msgMfd += "," + String(readWattageR(110)); 
+    msgMfd += "," + String(readWattageR(112)); 
+    msgMfd += "," + String(readWattageR(114)); 
+    msgMfd += "," + String(readWattageR(116));
+    msgMfd += "," + String(readWattageR(118)); 
+    msgMfd += "," + String(readWattageR(120)); 
+    msgMfd += "," + String(readWattageR(122)); 
+    msgMfd += "," + String(readWattageR(124)); 
+    msgMfd += "," + String(readWattageR(126)); 
+    msgMfd += "," + String(readWattageR(128)); 
+    msgMfd += "," + String(readWattageR(130)); 
+    msgMfd += "," + String(readWattageR(132)); 
+    msgMfd += "," + String(readWattageR(134)); 
+    msgMfd += "," + String(readWattageR(136)); 
+    msgMfd += "," + String(readWattageR(138)); 
+    msgMfd += "," + String(readWattageR(140)); 
+    msgMfd += "," + String(readWattageR(142)); 
+                     
+   // msgMfd += readMfd2();
+    
+                   
+
+   }
    //msgMfd += "," + String(readRegister());//VAH
    //  node.clearResponseBuffer();
 
   return msgMfd;
 }
+String readMfd2(){
+String msgMfd2 = String(ts_epoch) + "," + id+"B" + "," + String(device_type);
+             
+    msgMfd2 += "," + String(readWattageR(144)); 
+    msgMfd2 += "," + String(readWattageR(146)); 
+    msgMfd2 += "," + String(readWattageR(148)); 
+    msgMfd2 += "," + String(readWattageR(150)); 
+    msgMfd2 += "," + String(readWattageR(152));
+    msgMfd2 += "," + String(readWattageR(154));
+    msgMfd2 += "," + String(readWattageR(156));
+    msgMfd2 += "," + String(readWattageR(158));
+    msgMfd2 += "," + String(readWattageR(160));
+    msgMfd2 += "," + String(readWattageR(162));
+    msgMfd2 += "," + String(readWattageR(164));
+    msgMfd2 += "," + String(readWattageR(174));
+    msgMfd2 += "," + String(readWattageR(176));
+    msgMfd2 += "," + String(readWattageR(182));
+    msgMfd2 += "," + String(readWattageR(184));
+    msgMfd2 += "," + String(readWattageR(186));
+    msgMfd2 += "," + String(readWattageR(188));
+    msgMfd2 += "," + String(readWattageR(190));
+    msgMfd2 += "," + String(readWattageR(192));
+    msgMfd2 += "," + String(readWattageR(194));
+    msgMfd2 += "," + String(readWattageR(196));
+  
+  return msgMfd2;
 
-String readMcp(){
-
-ledState = HIGH;
-   
- digitalWrite(CS_PIN,LOW);    
-
-MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
-  val = adc.readADC(0);
-  Serial.println(val);
-  val1 = adc.readADC(1);
-  Serial.println(val1);
-  val2 = adc.readADC(2); 
-  Serial.println(val2);
-  val3 = adc.readADC(3);
-  Serial.println(val3);
-  val4 = adc.readADC(4);
-  Serial.println(val4);
-  val5 = adc.readADC(5);
-  Serial.println(val5);
-  val6 = adc.readADC(6); 
-  Serial.println(val6);
-  val7 = adc.readADC(7);
-  Serial.println(val7);
-   digitalWrite(CS_PIN,HIGH);
-
-msgMcp = id;
-msgMcp += "," + String (val); 
-msgMcp += "," + String (val1); 
-msgMcp += "," + String (val2);
-msgMcp += "," + String (val3);
-msgMcp += "," + String (val4); 
-msgMcp += "," + String (val5); 
-msgMcp += "," + String (val6);
-msgMcp += "," + String (val7);
-    return msgMcp;
 }
 
+bool dataStream(){                                        // don't remove this  its needed to shut linker up
+  int i =0 ;
+   //while(i<160)
+  int j = 0;
+  int a[10],b[10];
+    int result =  node.readHoldingRegisters(i, 2);
+     a[j] =node.getResponseBuffer(0);
+     b[j] =node.getResponseBuffer(1);
+    i=i+2;
+    j++;
+    if (i = 160 ){
+       i = 100;
+        j = 0;
+      //taskDataStream.disable();
+      return true;
+      }
+}
+boolean read_Mfd_Task()
+{
+  msgMfd_payload = readMfd();
+  msgMfd_payload1 = readMfd2();
+  Serial.println(msgMfd_payload);
+  sendMessage();
+  return true;
+}
