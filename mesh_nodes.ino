@@ -183,7 +183,9 @@ void receivedCallback( uint32_t from, String &msg ) {
          {  
             taskSendMsgSd.enable();
             taskWriteToCard.disable();
-           String configFile = String( id + "," + root + ","  + mcp + ","  + mfd + ","  + pins + ","  + sendDelay);
+
+
+           String configFile = String( id + "," + String(root) + ","  + String(mcp) + ","  + String(mfd) + ","  + String(pins) + ","  + String(sendDelay));
             mesh.sendSingle(root, configFile);
             }
             taskConnLed.enable();
@@ -442,7 +444,7 @@ File timeFile = LittleFS.open("time.txt", "r");
   Serial.println(val7);
 
 
-  msgMcp += ts_epoch + "," + id;
+  msgMcp += String(ts_epoch) + "," + id;
 
 
 msgMcp += "," + String(6);
