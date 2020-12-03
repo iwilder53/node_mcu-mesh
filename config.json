@@ -1,0 +1,24 @@
+{
+    
+        "ssid":"HetaDatain1",
+        "password":"Test@Run_1",
+    
+        "root":"574300659","id":"2",
+    
+        "mfd":"0","mcp":"1",
+        "pins":"8","delay":"2",
+        "device_count":"2",
+        "mfd_dev_id_1":"3","mfd_dev_id_2":"4",
+        "mfd_dev_id_3":"4","mfd_dev_id_4":"5",
+        "mfd_dev_id_5":"15",
+    
+        "pin1min":"1050","pin1max":"1200",
+        "pin2min":"14","pin2max":"500",
+        "pin3min":"0","pin3max":"0",
+        "pin4min":"0","pin4max":"200",
+        "pin5min":"0","pin5max":"100",
+        "pin6min":"1","pin6max":"100",
+        "pin7min":"1","pin7max":"1000",
+        "pin8min":"1","pin8max":"100"
+    
+    }
