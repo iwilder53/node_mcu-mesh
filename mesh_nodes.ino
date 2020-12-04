@@ -1,3 +1,4 @@
+
     
   #include "painlessMesh.h"
   #include <MCP3008.h>
@@ -5,6 +6,9 @@
   #include "FS.h"
 #include <Arduino.h>
   #include <ModbusMaster.h>
+ #include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 
 
 #define relayPin D3
@@ -27,6 +31,9 @@
 //#define   MESH_PASSWORD   "Test@Run_1"                         // Mesh Password should be same for all  nodes in Mesh Network
 #define   MESH_PORT       5555                                      // Mesh Port should be same for all  nodes in Mesh Network
 
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+Adafruit_BME280 bme;
 Scheduler userScheduler; // to control your personal task
 painlessMesh  mesh;
 MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
@@ -46,7 +53,7 @@ int relay_pin_0_min, relay_pin_0_max,relay_pin_1_min, relay_pin_1_max,relay_pin_
   int pos;
   uint32_t root;
   long previousMillis = 0;  
-  int mcp = 0, mfd = 0, pins = 0;
+  int mcp = 0, mfd = 0, pins = 0, smb =0;
   int first_Reg, second_Reg;
   int time_to_print;
   bool MCP_Sent = false;
@@ -59,6 +66,8 @@ String msgMfd_payload1;
   bool ackStatus;
   // User stub
 void updateTime();
+void mbe();
+
 String readMcp();
 void writeToCard();
 void writeTimeToCard();
@@ -94,7 +103,8 @@ void postTransmission(){
   Task taskWriteToCard( TASK_MINUTE * sendDelay , TASK_FOREVER, &writeToCard );
   Task taskReadMfd( TASK_MINUTE * sendDelay, TASK_FOREVER, &read_Mfd_Task );   // Set task second to send msg in a time interval (Here interval is 4 second)
   Task task_Multi_Mfd_Read(TASK_SECOND * 10, TASK_FOREVER, &multi_mfd_read );
- 
+  Task taskReadMBE( TASK_MINUTE * sendDelay , TASK_FOREVER, &mbe );
+
   // If you want to receive sensor readings from this node, write code in below function....
 
   void sendMessage() {
@@ -173,7 +183,7 @@ void receivedCallback( uint32_t from, String &msg ) {
   }
 
   void newConnectionCallback(uint32_t nodeId) {
-    Serial1.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
            String nMap = mesh.asNodeTree().toString();
          mesh.sendSingle(root, nMap);
         
@@ -191,8 +201,8 @@ void receivedCallback( uint32_t from, String &msg ) {
  }
 
   void changedConnectionCallback() {
-  Serial1.printf("Changed connections\n");
-  Serial1.printf("Changed connections\n");
+  Serial.printf("Changed connections\n");
+  Serial.printf("Changed connections\n");
   String nMap = mesh.asNodeTree().toString();
   mesh.sendSingle(root, nMap);
  }
@@ -356,6 +366,9 @@ Serial1.println(relay_pin_07_max );
   const char* MFD_SERIAL_ID_5 = doc["mfd_dev_id_5"];
   mfd_dev_id[4] = atoi(MFD_SERIAL_ID_5);
   Serial.println(mfd_dev_id[4]);
+  
+  const char*  SMB = doc["sensor"];
+  smb= atoi(SMB);
 
 
   pins = atoi(PINS);
@@ -399,14 +412,26 @@ File timeFile = LittleFS.open("time.txt", "r");
   userScheduler.addTask(taskConnLed);
   userScheduler.addTask(taskReadMfd);
   userScheduler.addTask(task_Multi_Mfd_Read);
+  userScheduler.addTask(taskReadMBE);
 
+if(smb == 1)
+ {
+   taskReadMBE.enable();
+    Serial.begin(115200);
+    
+   if (!bme.begin(0x76)) {
+		Serial.println("Could not find a valid BME280 sensor, check wiring!");
 
+ }
+ bme.MODE_FORCED;
+ }
 
  if(mfd == 1)
  {
    taskReadMfd.enable();
   }else{
    taskSendMessage.enable();
+   
 
   }
 
@@ -970,3 +995,23 @@ void multi_mfd_read(){
     mfd_read_pos = 0;
   }
 }
+
+ void mbe ()
+ {
+   bme.takeForcedMeasurement();
+  String readMbe =  String (ts_epoch)+ "," + id+ "," + "6"+ "," + String(bme.readTemperature())+","+String(bme.readHumidity())+","+String(bme.readPressure())+","+String(bme.readAltitude(SEALEVELPRESSURE_HPA));
+  if (mesh.isConnected(root)){
+     mesh.sendSingle(root, readMbe );  
+
+   }
+  else{
+
+
+    LittleFS.begin();
+    File dataFile = LittleFS.open("offlinelog.txt","a");
+    dataFile.println(readMbe);
+    dataFile.close();
+    LittleFS.end();
+  }
+  Serial.println(readMbe);
+ }
