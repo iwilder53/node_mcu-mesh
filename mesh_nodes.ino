@@ -49,6 +49,8 @@ int relay_pin_0_min, relay_pin_0_max,relay_pin_1_min, relay_pin_1_max,relay_pin_
   int mcp = 0, mfd = 0, pins = 0;
   int first_Reg, second_Reg;
   int time_to_print;
+  bool MCP_Sent = false;
+
 String msgMfd_payload;
 String msgMfd_payload1;
 
@@ -66,7 +68,6 @@ void postTransmission();
 bool dataStream();
 void cpu_chill();
 boolean read_Mfd_Task();
-boolean MCP_Sent = false;
 void sendMessage() ;// Prototype so PlatformIO doesn't complain
 void sendMsgSd();
 void blink_con_led();
@@ -100,37 +101,20 @@ void postTransmission(){
    digitalWrite(sendLed, HIGH);  
 
    if (mesh.isConnected(root)){
-  Serial.print("found root, pinging . . . ");
-  taskWriteToCard.disable();
-   String msg = "online?";                                       // You can write node name/no. here so that you may easily recognize it        
-   uint32_t target = root;                                         // Target is Node id of the node where you want to send sms (Here, write node id of mqtt bridge (Root Node))
-   mesh.sendSingle(target, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
-   Serial.println(msg);
-   }
-   else{
-     taskWriteToCard.enable();
-       Serial.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
-
-   }
-    digitalWrite(sendLed, LOW);  
-
-   } 
-
- 
-  // Msg recived by node. If you want to perform any task by receiving msg, write code in the below function....
-void receivedCallback( uint32_t from, String &msg ) {
-  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
- if (msg=="online")
-  {
-   digitalWrite(sendLed, HIGH);  
+      digitalWrite(sendLed, HIGH);  
     // You can write node name/no. here so that you may easily recognize it
     if (mcp == 1 && mfd == 1 ){
-      String msg = msgMfd_payload;
-      mesh.sendSingle(root,msg);
-      msg = msgMfd_payload1;
-      mesh.sendSingle(root, msg); 
-     if(MCP_Sent == false){ msg = readMcp();
-      mesh.sendSingle(root, msg );     }                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
+
+       String  msg = msgMfd_payload;
+       mesh.sendSingle(root,msg);
+       String msg2 = msgMfd_payload1;
+       mesh.sendSingle(root, msg2); 
+     if(MCP_Sent == false){
+       String msg3 = readMcp();
+       mesh.sendSingle(root, msg3);
+       MCP_Sent = true;
+ 
+          }                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
    wdt = 0;
    ackStatus = true;
    taskWriteToCard.disable();
@@ -140,12 +124,12 @@ void receivedCallback( uint32_t from, String &msg ) {
       else if (mfd == 1 ){
        // taskDataStream.enable();
       
-        String msg =  msgMfd_payload;
-        mesh.sendSingle(root, msg);
-        Serial.println(msg);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
-         msg =  msgMfd_payload1;
-        mesh.sendSingle(root, msg);
-        Serial.println(msg);
+        String msg1 =  msgMfd_payload;
+        mesh.sendSingle(root, msg1);
+        Serial1.println(msg1);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
+        String msg2 =  msgMfd_payload1;
+        mesh.sendSingle(root, msg2);
+        Serial1.println(msg2);
         wdt = 0;
    ackStatus = true;
    taskWriteToCard.disable();
@@ -156,7 +140,7 @@ void receivedCallback( uint32_t from, String &msg ) {
         else if(mcp == 1 ){
   String msg = readMcp();
    mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
-   Serial.println(msg);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
+   Serial1.println(msg);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
    wdt = 0;
    ackStatus = true;
    taskWriteToCard.disable();
@@ -168,12 +152,28 @@ void receivedCallback( uint32_t from, String &msg ) {
    }
 
 
+   else{
+     taskWriteToCard.enable();
+       Serial1.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
+
+   }
+    digitalWrite(sendLed, LOW);  
+
+   } 
+
+ 
+  // Msg recived by node. If you want to perform any task by receiving msg, write code in the below function....
+void receivedCallback( uint32_t from, String &msg ) {
+  Serial1.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
+  
+  
    String strMsg = String(msg);
    ts_epoch = strMsg.toInt();
- }
+ 
+  }
 
   void newConnectionCallback(uint32_t nodeId) {
-    Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
+    Serial1.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
            String nMap = mesh.asNodeTree().toString();
          mesh.sendSingle(root, nMap);
         
@@ -191,21 +191,23 @@ void receivedCallback( uint32_t from, String &msg ) {
  }
 
   void changedConnectionCallback() {
-  Serial.printf("Changed connections\n");
-  Serial.printf("Changed connections\n");
+  Serial1.printf("Changed connections\n");
+  Serial1.printf("Changed connections\n");
   String nMap = mesh.asNodeTree().toString();
   mesh.sendSingle(root, nMap);
  }
 
   void nodeTimeAdjustedCallback(int32_t offset) {
-    Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
+    Serial1.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(),offset);
  }
 
  void delayReceivedCallback(uint32_t from, int32_t delay) {
-   Serial.printf("Delay to node %u is %d us\n", from, delay);
+   Serial1.printf("Delay to node %u is %d us\n", from, delay);
  }
 
   void setup() {
+
+    Serial1.begin(115200);
   pinMode(MAX485_DE_RE, OUTPUT);
   // Init in receive mode
   digitalWrite(MAX485_DE_RE, 0);
@@ -221,7 +223,7 @@ void receivedCallback( uint32_t from, String &msg ) {
 
   size_t size = configFile.size();
   if (size > 1024) {
-    Serial.println("Config file size is too large");
+    Serial1.println("Config file size is too large");
   }
   std::unique_ptr<char[]> buf(new char[size]);
 
@@ -230,7 +232,7 @@ void receivedCallback( uint32_t from, String &msg ) {
   StaticJsonDocument<1024> doc;
   auto error = deserializeJson(doc, buf.get());
   if (error) {
-    Serial.println("Failed to parse config file");
+    Serial1.println("Failed to parse config file");
   }
 
 const char* MESH_PREFIX = doc["ssid"];
@@ -248,8 +250,8 @@ const char* pin1max = doc["pin1max"];
 
 relay_pin_0_min = atoi(pin1min);
 relay_pin_0_max = atoi(pin1max);
-Serial.println(relay_pin_0_min );
-Serial.println(relay_pin_0_max );
+Serial1.println(relay_pin_0_min );
+Serial1.println(relay_pin_0_max );
 
  
 const char* pin2min = doc["pin2min"];
@@ -257,8 +259,8 @@ const char* pin2max = doc["pin2max"];
 
 relay_pin_1_min = atoi(pin2min);
 relay_pin_1_max = atoi(pin2max);
-Serial.println(relay_pin_1_min );
-Serial.println(relay_pin_1_max );
+Serial1.println(relay_pin_1_min );
+Serial1.println(relay_pin_1_max );
 
  
 const char* pin3min = doc["pin3min"];
@@ -266,32 +268,32 @@ const char* pin3max = doc["pin3max"];
 
 relay_pin_2_min = atoi(pin3min);
 relay_pin_2_max = atoi(pin3max);
-Serial.println(relay_pin_2_min );
-Serial.println(relay_pin_2_max );
+Serial1.println(relay_pin_2_min );
+Serial1.println(relay_pin_2_max );
 
  
 const char* pin4min = doc["pin4min"];
 const char* pin4max = doc["pin4max"];
 relay_pin_3_min = atoi(pin4min);
 relay_pin_3_max = atoi(pin4max);
-Serial.println(relay_pin_3_min );
-Serial.println(relay_pin_3_max );
+Serial1.println(relay_pin_3_min );
+Serial1.println(relay_pin_3_max );
  
 const char* pin5min = doc["pin5min"];
 const char* pin5max = doc["pin5max"];
  
 relay_pin_04_min = atoi(pin5min);
 relay_pin_04_max = atoi(pin5max);
-Serial.println(relay_pin_04_min );
-Serial.println(relay_pin_04_max );
+Serial1.println(relay_pin_04_min );
+Serial1.println(relay_pin_04_max );
 
 const char* pin6min = doc["pin6min"];
 const char* pin6max = doc["pin6max"];
 
 relay_pin_05_min = atoi(pin6min);
 relay_pin_05_max = atoi(pin6max);
-Serial.println(relay_pin_05_min );
-Serial.println(relay_pin_05_max );
+Serial1.println(relay_pin_05_min );
+Serial1.println(relay_pin_05_max );
  
 const char* pin7max = doc["pin7max"];
 const char* pin7min = doc["pin7min"];
@@ -299,8 +301,8 @@ const char* pin7min = doc["pin7min"];
 
 relay_pin_06_min = atoi(pin7min);
 relay_pin_06_max = atoi(pin7max);
-Serial.println(relay_pin_06_min );
-Serial.println(relay_pin_06_max );
+Serial1.println(relay_pin_06_min );
+Serial1.println(relay_pin_06_max );
 
  
 const char* pin8max = doc["pin8max"];
@@ -308,23 +310,23 @@ const char* pin8min = doc["pin8min"];
 
 relay_pin_07_min = atoi(pin8min);
 relay_pin_07_max = atoi(pin8max);
-Serial.println(relay_pin_07_min );
-Serial.println(relay_pin_07_max );
+Serial1.println(relay_pin_07_min );
+Serial1.println(relay_pin_07_max );
    
 
    
   sendDelay = atoi(DELAY);
-  Serial.print("Loaded id: ");
+  Serial1.print("Loaded id: ");
     id = atoi(ID);
-  Serial.println(ID);
-  Serial.print("Loaded root id: ");
+  Serial1.println(ID);
+  Serial1.print("Loaded root id: ");
    root = atoi(ROOT);
-  Serial.println(ROOT);
+  Serial1.println(ROOT);
   mcp = atoi(MCP);
-    Serial.println(mcp);
+    Serial1.println(mcp);
 
   mfd = atoi(MFD);
-  Serial.println(mfd);
+  Serial1.println(mfd);
 
   const char* DEV_COUNT = doc["device_count"];
   device_count = atoi(DEV_COUNT);
@@ -509,8 +511,8 @@ trig_Relay(val1, relay_pin_07_max, relay_pin_07_min );
     
 
 }return msgMcp;
-MCP_Sent = true;
  }
+
  }
 
 void trig_Relay(int thres ,int relay_max, int relay_min)
@@ -535,7 +537,7 @@ LittleFS.begin();
   File file = LittleFS.open("offlinelog.txt","r"); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
 //#endif
   if (!file) {
-    Serial.println("Failed to open file for reading");
+    Serial1.println("Failed to open file for reading");
     taskSendMsgSd.disable();
           pos = 0;
           timeIndex = 0;
@@ -547,17 +549,17 @@ LittleFS.begin();
 { 
       file.seek(pos);
      buffer = file.readStringUntil('\n');
-   // Serial.println(buffer); //Printing for debugging purpose         
+   // Serial1.println(buffer); //Printing for debugging purpose         
        msgSd = buffer; 
   if(buffer != ""){
 
       mesh.sendSingle(root, msgSd );                                       
-      Serial.println(msgSd); 
+      Serial1.println(msgSd); 
       pos = file.position();
   }
  
   file.close();
-  Serial.println(F("DONE Reading"));
+  Serial1.println(F("DONE Reading"));
  // if (pos == file.size()){
   }
     if (buffer == "") { 
@@ -575,7 +577,7 @@ LittleFS.begin();
 void writeToCard(){
     // taskIdle.disable();
 
-{  Serial.print("write to card works");
+{  Serial1.print("write to card works");
         taskConnLed.disable();
         digitalWrite(sendLed, HIGH);
 
@@ -587,7 +589,10 @@ void writeToCard(){
 
           msg_1 = msgMfd_payload;
           msg_2 = msgMfd_payload1;
-         if(MCP_Sent == false){ msg = readMcp();
+         if(MCP_Sent == false){ 
+           msg = readMcp();
+             MCP_Sent = true;
+
         }}
        if (mfd == 1 && mcp == 0){
        
@@ -598,13 +603,13 @@ void writeToCard(){
        }
           if (mcp == 1 && mfd == 0 )
           {msg = readMcp();}
-             Serial.println(msg);
+             Serial1.println(msg);
              
 
       LittleFS.begin();
     File dataFile = LittleFS.open("offlinelog.txt", "a");
     if(dataFile.size() > 4e+6){
-        Serial.print("memory full");
+        Serial1.print("memory full");
         digitalWrite(sendLed, LOW);
 
     }
@@ -618,23 +623,24 @@ void writeToCard(){
         else if(mfd == 1 && mcp == 1){
         dataFile.println(msg_1);
         dataFile.println(msg_2);
-        dataFile.println(msg);
-
+        if(MCP_Sent == false )
+       { dataFile.println(msg);
+       }
     }
 else{
     dataFile.println(msg);
     }
 
     dataFile.close();
-    // print to the serial port too:
-     Serial.println("to SD Card"); 
-    Serial.println(msg);
-    Serial.println(msg_1);
-    Serial.println(msg_2);
-    Serial.println("WiFi signal: " + String(WiFi.RSSI()) + "db");}
+    // print to the Serial1 port too:
+     Serial1.println("to SD Card"); 
+    Serial1.println(msg);
+    Serial1.println(msg_1);
+    Serial1.println(msg_2);
+    Serial1.println("WiFi signal: " + String(WiFi.RSSI()) + "db");}
   // if the file isn't open, pop up an error:
   else {
-    Serial.println("error opening  offlinelog.txt"); 
+    Serial1.println("error opening  offlinelog.txt"); 
     }
     timeIndex++;
     wdt = 0;
@@ -661,7 +667,7 @@ void writeTimeToCard()
     dataFile.close();
     }
   else {
-    Serial.println("error opening  time.txt"); 
+    Serial1.println("error opening  time.txt"); 
     }  LittleFS.end();
 }
 
@@ -696,7 +702,7 @@ String dec2binary(int x)
  while(bitsCount--)
    str[i++] = bitRead(num, bitsCount ) + '0';
    str[i] = '\0';
-Serial.println(str[i]);
+Serial1.println(str[i]);
 return str;
 }
 
@@ -955,6 +961,7 @@ void multi_mfd_read(){
   msgMfd_payload = readMfd(dev_id);
   msgMfd_payload1 = readMfd2(dev_id);
   sendMessage();
+
   Serial.end();
 
   mfd_read_pos++;
