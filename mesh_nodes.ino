@@ -10,17 +10,17 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
+#include "DHT.h"
+
+#define DHTPIN D5
+#define DHTTYPE DHT22 
 
 #define relayPin D3
 
 #define MAX485_DE_RE      D4
 
-#define CS_PIN D8
-#define CLOCK_PIN D5
-#define MOSI_PIN D7
-#define MISO_PIN D6
 
-#define sendLed D1    
+#define sendLed D8
 #define connLed D0
 
 #define CS_PIN D8
@@ -38,6 +38,8 @@ Scheduler userScheduler; // to control your personal task
 painlessMesh  mesh;
 MCP3008 adc(CLOCK_PIN, MOSI_PIN, MISO_PIN, CS_PIN);
 ModbusMaster node;
+DHT dht(DHTPIN, DHTTYPE);
+
 
 uint8_t mfd_read_pos = 0;
 int relay_pin_0_min, relay_pin_0_max,relay_pin_1_min, relay_pin_1_max,relay_pin_2_min, relay_pin_2_max,relay_pin_3_min, relay_pin_3_max,relay_pin_04_min, relay_pin_04_max,relay_pin_05_min, relay_pin_05_max,relay_pin_06_min, relay_pin_06_max,relay_pin_07_min, relay_pin_07_max;                               // Mesh Port should be same for all  nodes in Mesh Network
@@ -45,7 +47,7 @@ int relay_pin_0_min, relay_pin_0_max,relay_pin_1_min, relay_pin_1_max,relay_pin_
   int mfd_dev_id[5];
   uint8_t sendDelay = 2;
   unsigned long period=0; 
-  uint16_t val, val1, val2, val3, val4, val5, val6, val7 ;
+  uint16_t val=0, val1=0, val2=0, val3=0, val4=0, val5=0, val6=0, val7=0 ;
   String id; 
   int wdt = 0; 
   int ts_epoch;
@@ -68,7 +70,7 @@ String msgMfd_payload1;
 void updateTime();
 void mbe();
 
-String readMcp();
+void readMcp();
 void writeToCard();
 void writeTimeToCard();
 String readMfd();
@@ -80,6 +82,9 @@ boolean read_Mfd_Task();
 void sendMessage() ;// Prototype so PlatformIO doesn't complain
 void sendMsgSd();
 void blink_con_led();
+void sendPayload();
+void saveToCard();
+ void sendMFD();
 Task taskUpdateTime( TASK_SECOND * 1 , TASK_FOREVER, &updateTime );   // Set task second to send msg in a time interval (Here interval is 4 second)
   
 void updateTime(){
@@ -100,77 +105,16 @@ void postTransmission(){
   Task taskConnLed( TASK_SECOND * 1 , TASK_FOREVER, &blink_con_led );
   Task taskSendMessage( TASK_MINUTE * sendDelay , TASK_FOREVER, &sendMessage );   // Set task second to send msg in a time interval (Here interval is 4 second)
   Task taskSendMsgSd( TASK_SECOND * 3 , TASK_FOREVER, &sendMsgSd );   // Set task second to send msg in a time interval
-  Task taskWriteToCard( TASK_MINUTE * sendDelay , TASK_FOREVER, &writeToCard );
-  Task taskReadMfd( TASK_MINUTE * sendDelay, TASK_FOREVER, &read_Mfd_Task );   // Set task second to send msg in a time interval (Here interval is 4 second)
   Task task_Multi_Mfd_Read(TASK_SECOND * 10, TASK_FOREVER, &multi_mfd_read );
   Task taskReadMBE( TASK_MINUTE * sendDelay , TASK_FOREVER, &mbe );
+  Task taskReadMcp( TASK_MINUTE * sendDelay , TASK_FOREVER, &readMcp );
+  Task taskReadMfd( TASK_MINUTE * sendDelay, TASK_FOREVER, &read_Mfd_Task );   // Set task second to send msg in a time interval (Here interval is 4 second)
 
   // If you want to receive sensor readings from this node, write code in below function....
 
   void sendMessage() {
    digitalWrite(sendLed, HIGH);  
-
-   if (mesh.isConnected(root)){
-      digitalWrite(sendLed, HIGH);  
-    // You can write node name/no. here so that you may easily recognize it
-    if (mcp == 1 && mfd == 1 ){
-
-       String  msg = msgMfd_payload;
-       mesh.sendSingle(root,msg);
-       String msg2 = msgMfd_payload1;
-       mesh.sendSingle(root, msg2); 
-     if(MCP_Sent == false){
-       String msg3 = readMcp();
-       mesh.sendSingle(root, msg3);
-       MCP_Sent = true;
- 
-          }                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
-   wdt = 0;
-   ackStatus = true;
-   taskWriteToCard.disable();
-  // taskIdle.enable();
-      
-      }        
-      else if (mfd == 1 ){
-       // taskDataStream.enable();
-      
-        String msg1 =  msgMfd_payload;
-        mesh.sendSingle(root, msg1);
-        Serial1.println(msg1);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
-        String msg2 =  msgMfd_payload1;
-        mesh.sendSingle(root, msg2);
-        Serial1.println(msg2);
-        wdt = 0;
-   ackStatus = true;
-   taskWriteToCard.disable();
-
-     // taskIdle.enable();
-
-        }
-        else if(mcp == 1 ){
-  String msg = readMcp();
-   mesh.sendSingle(root, msg );                                        // Send msg to single node. To broadcast msg (mesh.sendBroadcast(msg))
-   Serial1.println(msg);  // If msg published from mqtt broker is LightON, Turn ON the built in LED of Nodemcu
-   wdt = 0;
-   ackStatus = true;
-   taskWriteToCard.disable();
-     // taskIdle.enable();
-
-        }
-           digitalWrite(sendLed, LOW);  
-
-   }
-
-
-   else{
-     taskWriteToCard.enable();
-       Serial1.println("WiFi signal: " + String(WiFi.RSSI()) + " db");       // Prints wi-fi signal strength in db
-
-   }
-    digitalWrite(sendLed, LOW);  
-
-   } 
-
+  }
  
   // Msg recived by node. If you want to perform any task by receiving msg, write code in the below function....
 void receivedCallback( uint32_t from, String &msg ) {
@@ -186,14 +130,9 @@ void receivedCallback( uint32_t from, String &msg ) {
     Serial.printf("--> startHere: New Connection, nodeId = %u\n", nodeId);
            String nMap = mesh.asNodeTree().toString();
          mesh.sendSingle(root, nMap);
-        
-         if(mesh.startDelayMeas(root))
-         {  
-            taskSendMsgSd.enable();
-            taskWriteToCard.disable();
-
-
-           String configFile = String( id + "," + String(root) + ","  + String(mcp) + ","  + String(mfd) + ","  + String(pins) + ","  + String(sendDelay));
+      if(mesh.startDelayMeas(root))
+         { taskSendMsgSd.enable();
+          String configFile = String( id + "," + String(root) + ","  + String(mcp) + ","  + String(mfd) + ","  + String(pins) + ","  + String(sendDelay));
             mesh.sendSingle(root, configFile);
             }
             taskConnLed.enable();
@@ -217,7 +156,7 @@ void receivedCallback( uint32_t from, String &msg ) {
 
   void setup() {
 
-    Serial1.begin(115200);
+    Serial.begin(115200);
   pinMode(MAX485_DE_RE, OUTPUT);
   // Init in receive mode
   digitalWrite(MAX485_DE_RE, 0);
@@ -408,32 +347,30 @@ File timeFile = LittleFS.open("time.txt", "r");
   userScheduler.addTask(taskSendMessage);
   userScheduler.addTask(taskUpdateTime);
   userScheduler.addTask(taskSendMsgSd);
-  userScheduler.addTask(taskWriteToCard);
   userScheduler.addTask(taskConnLed);
   userScheduler.addTask(taskReadMfd);
   userScheduler.addTask(task_Multi_Mfd_Read);
   userScheduler.addTask(taskReadMBE);
+  userScheduler.addTask(taskReadMcp);
 
+if (mcp == 1){
+  Serial.print("mcp activated");
+   taskReadMcp.enable();
+}
 if(smb == 1)
  {
-   taskReadMBE.enable();
-    Serial.begin(115200);
-    
+   taskReadMBE.enable();    
    if (!bme.begin(0x76)) {
 		Serial.println("Could not find a valid BME280 sensor, check wiring!");
-
+    dht.begin();
+     }
+     bme.MODE_FORCED;
  }
- bme.MODE_FORCED;
- }
-
- if(mfd == 1)
+  if(mfd == 1)
  {
    taskReadMfd.enable();
-  }else{
-   taskSendMessage.enable();
-   
-
   }
+
 
    taskUpdateTime.enable();
    pinMode(A0, INPUT);                                                                   // Define A0 pin as INPUT
@@ -468,27 +405,37 @@ if(smb == 1)
    }*/
  }
 
-  String readMcp()
- {  if(MCP_Sent == false)
-    {
+  void readMcp()
+ {
+   val=0, val1=0, val2=0, val3=0, val4=0, val5=0, val6=0, val7=0 ;
    String msgMcp;
-  val = adc.readADC(0);
-  Serial.println(val);
-  val1 = adc.readADC(1);
-  Serial.println(val1);
-  val2 = adc.readADC(2); 
-  Serial.println(val2);
-  val3 = adc.readADC(3);
-  Serial.println(val3);
-  val4 = adc.readADC(4);
-  Serial.println(val4);
-  val5 = adc.readADC(5);
-  Serial.println(val5);
-  val6 = adc.readADC(6); 
-  Serial.println(val6);
-  val7 = adc.readADC(7);
-  Serial.println(val7);
-
+   for(int i = 0; i < 10; i++){
+  val += adc.readADC(0);
+ // Serial.println(val);
+  val1 += adc.readADC(1);
+  //Serial.println(val1);
+  val2 += adc.readADC(2); 
+  //Serial.println(val2);
+  val3 += adc.readADC(3);
+  //Serial.println(val3);
+  val4 += adc.readADC(4);
+  //Serial.println(val4);
+  val5 += adc.readADC(5);
+  //Serial.println(val5);
+  val6 += adc.readADC(6); 
+  //Serial.println(val6);
+  val7 += adc.readADC(7);
+  //Serial.println(val7);
+  delay(400);
+  }
+float sVal= val/10;
+float sVal1= val1/10;
+float sVal2= val2/10;
+float sVal3= val3/10;
+float sVal4= val4/10;
+float sVal5= val5/10;
+float sVal6= val6/10;
+float sVal7= val7/10;
 
   msgMcp += String(ts_epoch) + "," + id;
 
@@ -499,46 +446,47 @@ msgMcp += "," + String(6);
 
 if(pins == 1 || pins > 1  ){
 
-msgMcp += "," + String (val); 
+msgMcp += "," + String (sVal); 
 trig_Relay(val,relay_pin_0_max, relay_pin_0_min);
 }if(pins == 2 || pins > 2  ){
 
-msgMcp += "," + String (val1); 
+msgMcp += "," + String (sVal1); 
 trig_Relay(val1, relay_pin_1_max, relay_pin_1_min );
 }if(pins == 3 || pins > 3  ){
-msgMcp += "," + String (val2); 
+msgMcp += "," + String (sVal2); 
 trig_Relay(val1, relay_pin_2_max, relay_pin_2_min );
 }if(pins == 4 || pins > 4  ){
 
-msgMcp += "," + String (val3); 
+msgMcp += "," + String (sVal3); 
 trig_Relay(val1, relay_pin_3_max, relay_pin_3_min );
 
 }if(pins == 5 || pins > 5  ){
 
-msgMcp += "," + String (val4); 
+msgMcp += "," + String (sVal4); 
 trig_Relay(val1, relay_pin_04_max, relay_pin_04_min );
 
 }if(pins == 6 || pins > 6  ){
 
-msgMcp += "," + String (val5); 
+msgMcp += "," + String (sVal5); 
 trig_Relay(val1, relay_pin_05_max, relay_pin_05_min );
 
 }if(pins == 7|| pins > 7 ){
 
-msgMcp += "," + String (val6); 
+msgMcp += "," + String (sVal6); 
 trig_Relay(val1, relay_pin_06_max, relay_pin_06_min );
 
 }if(pins == 8 || pins > 8  ){
 
-msgMcp += "," + String (val7); 
+msgMcp += "," + String (sVal7); 
 trig_Relay(val1, relay_pin_07_max, relay_pin_07_min );
 
     
 
-}return msgMcp;
+}
+sendPayload(msgMcp);
  }
 
- }
+ 
 
 void trig_Relay(int thres ,int relay_max, int relay_min)
 {
@@ -598,89 +546,6 @@ LittleFS.begin();
 
 }
 
-
-void writeToCard(){
-    // taskIdle.disable();
-
-{  Serial1.print("write to card works");
-        taskConnLed.disable();
-        digitalWrite(sendLed, HIGH);
-
-     if (ackStatus == false)
-     {
-
-        String msg, msg_1, msg_2;
-        if (mfd == 1  && mcp == 1){
-
-          msg_1 = msgMfd_payload;
-          msg_2 = msgMfd_payload1;
-         if(MCP_Sent == false){ 
-           msg = readMcp();
-             MCP_Sent = true;
-
-        }}
-       if (mfd == 1 && mcp == 0){
-       
-         msg_1 =  msgMfd_payload;
-         msg_2 = msgMfd_payload1;
-       
-      
-       }
-          if (mcp == 1 && mfd == 0 )
-          {msg = readMcp();}
-             Serial1.println(msg);
-             
-
-      LittleFS.begin();
-    File dataFile = LittleFS.open("offlinelog.txt", "a");
-    if(dataFile.size() > 4e+6){
-        Serial1.print("memory full");
-        digitalWrite(sendLed, LOW);
-
-    }
-// if the file is available, write to it:
-  if (dataFile.size() < 4e+6) {
-    if(mfd == 1 && mcp == 0 ){
-      dataFile.println(msg_1);
-      dataFile.println(msg_2);
-
-    }
-        else if(mfd == 1 && mcp == 1){
-        dataFile.println(msg_1);
-        dataFile.println(msg_2);
-        if(MCP_Sent == false )
-       { dataFile.println(msg);
-       }
-    }
-else{
-    dataFile.println(msg);
-    }
-
-    dataFile.close();
-    // print to the Serial1 port too:
-     Serial1.println("to SD Card"); 
-    Serial1.println(msg);
-    Serial1.println(msg_1);
-    Serial1.println(msg_2);
-    Serial1.println("WiFi signal: " + String(WiFi.RSSI()) + "db");}
-  // if the file isn't open, pop up an error:
-  else {
-    Serial1.println("error opening  offlinelog.txt"); 
-    }
-    timeIndex++;
-    wdt = 0;
-    ackStatus = false;
-
-    LittleFS.end();
-        
-        }
-                digitalWrite(sendLed, LOW);
-                  // taskIdle.enable();
-
-
-    }
-
-}
 
 void writeTimeToCard()
 {
@@ -903,41 +768,38 @@ String readMfd( int mfd_dev_id){
   msgMfd += "," + id ;
   msgMfd += "," + String(2);
   msgMfd += "," + String(mfd_dev_id);
-    msgMfd += "," + String(readWattageR(100)); 
-    msgMfd += "," + String(readWattageR(102));
-    msgMfd += "," + String(readWattageR(104));
-    msgMfd += "," + String(readWattageR(106));
-    msgMfd += "," + String(readWattageR(108)); 
-    msgMfd += "," + String(readWattageR(110)); 
-    msgMfd += "," + String(readWattageR(112)); 
-    msgMfd += "," + String(readWattageR(114)); 
-    msgMfd += "," + String(readWattageR(116));
-    msgMfd += "," + String(readWattageR(118)); 
-    msgMfd += "," + String(readWattageR(120)); 
-    msgMfd += "," + String(readWattageR(122)); 
-    msgMfd += "," + String(readWattageR(124)); 
-    msgMfd += "," + String(readWattageR(126)); 
-    msgMfd += "," + String(readWattageR(128)); 
-    msgMfd += "," + String(readWattageR(130)); 
-    msgMfd += "," + String(readWattageR(132)); 
-    msgMfd += "," + String(readWattageR(134)); 
-    msgMfd += "," + String(readWattageR(136)); 
-    msgMfd += "," + String(readWattageR(138)); 
-    msgMfd += "," + String(readWattageR(140)); 
-    msgMfd += "," + String(readWattageR(142));  
-    msgMfd += "," + String(readWattageR(144));  
-    msgMfd += "," + String(readWattageR(146));  
+  msgMfd += "," + String(readWattageR(100)); 
+  msgMfd += "," + String(readWattageR(102));
+  msgMfd += "," + String(readWattageR(104));
+  msgMfd += "," + String(readWattageR(106));
+  msgMfd += "," + String(readWattageR(108)); 
+  msgMfd += "," + String(readWattageR(110)); 
+  msgMfd += "," + String(readWattageR(112)); 
+  msgMfd += "," + String(readWattageR(114)); 
+  msgMfd += "," + String(readWattageR(116));
+  msgMfd += "," + String(readWattageR(118)); 
+  msgMfd += "," + String(readWattageR(120)); 
+  msgMfd += "," + String(readWattageR(122)); 
+  msgMfd += "," + String(readWattageR(124)); 
+  msgMfd += "," + String(readWattageR(126)); 
+  msgMfd += "," + String(readWattageR(128)); 
+  msgMfd += "," + String(readWattageR(130)); 
+  msgMfd += "," + String(readWattageR(132)); 
+  msgMfd += "," + String(readWattageR(134)); 
+  msgMfd += "," + String(readWattageR(136)); 
+  msgMfd += "," + String(readWattageR(138)); 
+  msgMfd += "," + String(readWattageR(140)); 
+  msgMfd += "," + String(readWattageR(142));  
+  msgMfd += "," + String(readWattageR(144));  
+  msgMfd += "," + String(readWattageR(146));  
 
   return msgMfd;
-}
+  }
 String readMfd2(int mfd_dev_id){
 
 String msgMfd2 = String(time_to_print) + "," + id + "," + String(2);
        msgMfd2 += "," + String(mfd_dev_id);
-
-    
-   
-   
+ 
     msgMfd2 += "," + String(readWattageR(148)); 
     msgMfd2 += "," + String(readWattageR(150)); 
     msgMfd2 += "," + String(readWattageR(152));
@@ -965,6 +827,8 @@ String msgMfd2 = String(time_to_print) + "," + id + "," + String(2);
     msgMfd2 += "," + String(readWattageR(196));
   
   return msgMfd2;
+ // sendPayload(msgMfd2);
+
 
 }
 
@@ -980,12 +844,11 @@ task_Multi_Mfd_Read.enable();
 
 void multi_mfd_read(){
   time_to_print++;
-  uint16_t dev_id;
+  Serial.end();
   Serial.begin(9600, SERIAL_8E1);
-  dev_id = mfd_dev_id[mfd_read_pos];
-  msgMfd_payload = readMfd(dev_id);
-  msgMfd_payload1 = readMfd2(dev_id);
-  sendMessage();
+  msgMfd_payload = readMfd(mfd_dev_id[mfd_read_pos]);
+  msgMfd_payload1 = readMfd2(mfd_dev_id[mfd_read_pos]);
+  sendMFD();
 
   Serial.end();
 
@@ -993,25 +856,45 @@ void multi_mfd_read(){
   if (mfd_read_pos == device_count){
     task_Multi_Mfd_Read.disable();
     mfd_read_pos = 0;
+    Serial.begin(115200);
   }
 }
 
  void mbe ()
- {
+ {  float dhttemp = dht.readTemperature();
    bme.takeForcedMeasurement();
-  String readMbe =  String (ts_epoch)+ "," + id+ "," + "6"+ "," + String(bme.readTemperature())+","+String(bme.readHumidity())+","+String(bme.readPressure())+","+String(bme.readAltitude(SEALEVELPRESSURE_HPA));
-  if (mesh.isConnected(root)){
-     mesh.sendSingle(root, readMbe );  
+  String readMbe =  String (ts_epoch)+ "," + id+ "," + "6"+ "," + String(bme.readTemperature())+","+String(bme.readHumidity())+","+String(bme.readPressure())+"," + String(dhttemp)+","+String(dht.readHumidity());
+  sendPayload(readMbe);
+ }
 
-   }
-  else{
 
+ void sendMFD(){
+
+digitalWrite(sendLed, HIGH);  
+sendPayload(msgMfd_payload);
+sendPayload(msgMfd_payload1);
+}
+
+void saveToCard(String payload){
 
     LittleFS.begin();
     File dataFile = LittleFS.open("offlinelog.txt","a");
-    dataFile.println(readMbe);
+    dataFile.println(payload);
     dataFile.close();
     LittleFS.end();
-  }
-  Serial.println(readMbe);
+
+}
+void sendPayload(String payload){
+  Serial.print(payload);
+if (mesh.isConnected(root)){
+    digitalWrite(sendLed, HIGH);  
+
+   mesh.sendSingle(root,payload);
+ }else{
+saveToCard(payload);
+saveToCard(payload);
+
  }
+   wdt = 0;
+
+}
