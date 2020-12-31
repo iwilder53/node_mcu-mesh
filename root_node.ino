@@ -1,4 +1,5 @@
-//This Code will only be utilised for root node.
+//This Code will only be utilised for root node. 
+// Cloud IP - 50.62.22.142 
 //#include "RTCDS1307.h"
 #include <TZ.h>
 #include "RTClib.h"
@@ -15,7 +16,9 @@
 #include <AsyncTCP.h>
 #endif
 #include <ESPAsyncWebServer.h>
+#include <ESP8266WiFi.h>
 
+int prevPeriod = 0;                                         // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
 
 #include <coredecls.h>                  // settimeofday_cb()
 #include <Schedule.h>
@@ -28,15 +31,14 @@
 //#include "SD.h"
 //#include "SPI.h"
 
-#define OTA_PART_SIZE 1024 //How many bytes to send per OTA data packet
 
 bool isConnected;
 
 #define MYTZ TZ_Asia_Kolkata
  
 uint32_t ack_to_node;
-
-
+boolean rtcSet ;
+long time_now = 0;
 static timeval tv;
 static timespec tp;
 static time_t now;
@@ -50,9 +52,6 @@ extern "C" int clock_gettime(clockid_t unused, struct timespec *tp);
 
 AsyncWebServer server(80);
 
-
-//#define   MESH_PREFIX     "HetaDatain"                  
-//#define   MESH_PASSWORD   "Test@Run_1"              
 #define   MESH_PORT       5555                               
 
 #define HOSTNAME "MQTT_Bridge"
@@ -62,14 +61,17 @@ void receivedCallback( const uint32_t &from, const String &msg );
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void sendLog();
 void sendTime();
+void showTime() ;
+void time_is_set_scheduled();
+void updateTime();
 
 IPAddress getlocalIP();
 IPAddress testIP(0,0,0,0);
 IPAddress myIP(0,0,0,0);
 
 
-IPAddress mqtt1 ;//(0,0,0,0);
-IPAddress mqtt2 ;//(0,0,0,0);
+IPAddress mqtt1 ;
+IPAddress mqtt2 ;
 
 
 uint8_t ip1_oct1,ip1_oct2,ip1_oct3,ip1_oct4;
@@ -84,11 +86,10 @@ String Secondary_PASS;
 
 painlessMesh  mesh;
 WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);//(mqtt1, 1883, mqttCallback, wifiClient);    
-
+PubSubClient mqttClient(wifiClient);            
           
 Scheduler userScheduler;
-RTC_DS1307 rtc;
+RTC_DS3231 rtc;
 
 uint8_t year, month, weekday, day, hour, minute, second;
 
@@ -96,54 +97,68 @@ int period;
 
 String m[12] = {"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"};
 String w[7] = {"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"};
+Task taskUpdateTime(TASK_SECOND, TASK_FOREVER, &updateTime );  
+Task taskSetRtc(TASK_SECOND, TASK_ONCE, &RtcSetTime );  
 
-Task taskSendTime( TASK_MINUTE * 1 , TASK_FOREVER, &sendTime );   
-void sendTime()
-{ 
-  //Serial.print("getting timeStamp");
-  //  DateTime now = rtc.now();
-//  Serial.print(now.unixtime() / 86400L);
+void updateTime(){
+  time_now++;
+}
+void RtcSetTime(){
+
+  if(!rtcSet){
+
+  Serial.print("getting timeStamp");
+  // DateTime now = rtc.now();
+// Serial.print(now.unixtime() / 86400L);
   gettimeofday(&tv, nullptr);
   clock_gettime(0, &tp);
   now = time(nullptr);
-
- // Serial.print("time:      ");
-  //Serial.println((uint32_t)now);
+  //Serial.print("time:      ");
   int timeNow = ((uint32_t)now);
-  // timeNow +=  timeNow + 19800;
-  String timeFromNTP = String(timeNow);
-  //String msg = String(now.unixtime() );
-  mesh.sendBroadcast(timeFromNTP);
+  //timeNow +=  timeNow + 19800;
+  rtc.adjust((uint32_t)now);
+  rtcSet = true;
+  Serial.println("setting rtc to :" );
+  Serial.print(timeNow);
+
+  }
+}
+// to send time to mesh nodes 
+Task taskSendTime(TASK_MINUTE * 1 , TASK_FOREVER, &sendTime );   
+void sendTime()
+{ 
   
-  Serial.print(timeFromNTP);
-  
+
+  String timeFromRTC = String(time_now);
+  mesh.sendBroadcast(timeFromRTC);
+ Serial.println(timeFromRTC);
 isConnected = false;
 String ack_pulse_to_sub = "ready";
 mqttClient.publish("hetadatainMesh/from/gateway", ack_pulse_to_sub.c_str());
-
-  
  }
+//for testing the topology 
 String scanprocessor(const String& var)
 {
   if(var == "SCAN")
-    return mesh.subConnectionJson(false) ;
+  String connlist = mesh.subConnectionJson();
+   // return connlist ;
   return String();
 }
-
-Task taskSendLog( TASK_SECOND * 2 , TASK_FOREVER, &sendLog );   // Set task second to send msg in a time interval
+// sending the data stored 
+Task taskSendLog( TASK_MILLISECOND * 500 , TASK_FOREVER, &sendLog );   // Set task second to send msg in a time interval
 
   void sendLog(){
          String logs;
          String topic = "hetadatainMesh/from/gateway";
 
-
     LittleFS.begin();
-    File file = LittleFS.open("offlinelog.txt","r"); 
+    File file = LittleFS.open("offlinelog.txt","r"); // FILE_READ is default so not realy needed but if you like to use this technique for e.g. write you need FILE_WRITE
+//#endif
   if (!file) {
-    Serial.println("Failed to open file for reading");
+    Serial.println("No File Found ");
     taskSendLog.disable();
           pos = 0;
-
+          //timeIndex = 0;
              return;
   }
     // String logs;
@@ -153,31 +168,45 @@ Task taskSendLog( TASK_SECOND * 2 , TASK_FOREVER, &sendLog );   // Set task seco
 { 
       file.seek(pos);
      buffer = file.readStringUntil('\n');
+   // Serial.println(buffer); //Printing for debugging purpose         
        logs = buffer; 
   if(buffer != ""){
       mqttClient.publish(topic.c_str(), logs.c_str());
+    // mesh.sendSingle(root, logs );                                       
       Serial.println(logs); 
       pos = file.position();
   }
+ 
   file.close();
   Serial.println(F("DONE Reading"));
-   }
+ // if (pos == file.size()){
+  }
     if (buffer == "") { 
+
+      if(rtc.lostPower()){
+        String msgRTCAlert =  "RTC lost time";
+        mqttClient.publish(topic.c_str(),msgRTCAlert.c_str());
+        Serial.print(msgRTCAlert);
+      }
      Serial.print ("done dumping");
       LittleFS.remove("offlinelog.txt");
   }
-     LittleFS.end(); 
+      LittleFS.end();
+
     }
 
 void setup() {
 Serial.begin(115200);
   rtc.begin();
 
+
+
 LittleFS.begin();
   File configFile = LittleFS.open("/config.json", "r");
   if (!configFile) {
     Serial.println("Failed to open config file");
   }
+
   size_t size = configFile.size();
   if (size > 1024) {
     Serial.println("Config file size is too large");
@@ -187,13 +216,15 @@ LittleFS.begin();
 
   configFile.readBytes(buf.get(), size);
 
-  StaticJsonDocument<300> doc;
+  StaticJsonDocument<400> doc;
   auto error = deserializeJson(doc, buf.get());
   if (error) {
 
     Serial.println("Failed to parse config file");
+
   }
-   
+  
+  
   const char* MESH_PREFIX = doc["mssid"];
   const char* MESH_PASSWORD = doc["mpass"];
   const char* STATION_SSID = doc["rssid1"];
@@ -211,6 +242,7 @@ LittleFS.begin();
   Serial.println(Secondary_SSID);
   Serial.println(Secondary_PASS);
 
+
   const char* ip1 = doc["ip11"]; 
   const char* ip2 = doc["ip12"]; 
   const char* ip3 = doc["ip13"]; 
@@ -224,11 +256,12 @@ LittleFS.begin();
   mqtt1 = temp1;
   Serial.println(mqtt1);
 
-  const char* ip21 = doc["ip21"]; 
+  const char* ip21 = doc["ip21"];
   const char* ip22 = doc["ip22"]; 
   const char* ip23 = doc["ip23"]; 
   const char* ip24 = doc["ip24"];
   
+
   ip2_oct1 = atoi(ip21);
   ip2_oct2 = atoi(ip22);
   ip2_oct3 = atoi(ip23);
@@ -238,34 +271,68 @@ LittleFS.begin();
   mqtt2 = temp2;
   Serial.println(mqtt2);
 
- LittleFS.end();
+  //for future use 
+/*
+uint8_t ip[4];
+const char* ip_1 = doc["IP1"];
+const char* ip_2 = doc["IP2"];
+const char* ip_3 = doc["IP3"];
+const char* ip_4 = doc["IP4"];
+*/
+//ip = atoi(doc["ip1"]);        //   test this later.
+
+/*
+  ip2_oct1 = atoi(ip_1);
+  ip2_oct2 = atoi(ip_2);
+  ip2_oct3 = atoi(ip_3);
+  ip2_oct4 = atoi(ip_4);*/
+
+//temp2 = (ip2_oct1, ip2_oct2, ip2_oct3, ip2_oct4);
+//local_IP = temp2;
+
+
+
+
+
+  LittleFS.end();
 mqttClient.setServer(mqtt1, 1883);
 mqttClient.setCallback(mqttCallback);
 
-  //rtc.setDate(19, 2, 28);
-  //rtc.setTime(23, 59, 50);
+ // rtc.setDate(, 2, 28);
+ // rtc.setTime(23, 59, 50);
 
-  mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE | GENERAL);                  
+// mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION  | MSG_TYPES | REMOTE | GENERAL);                  
+
+ 
+  
   mesh.init( MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT, WIFI_AP_STA, 1 );
   mesh.onReceive(&receivedCallback);
   Serial.print("Node id is: ");                                                 
   Serial.println(mesh.getNodeId());
+
   mesh.stationManual(STATION_SSID, STATION_PASSWORD);
   mesh.setHostname(HOSTNAME);
 
-   mesh.setRoot(true);
-   mesh.setContainsRoot(true);
+  mesh.setRoot(true);
+  mesh.setContainsRoot(true);
 
 
   userScheduler.addTask( taskSendLog );
   userScheduler.addTask(taskSendTime);
+  userScheduler.addTask(taskUpdateTime);
+  userScheduler.addTask(taskSetRtc);
+  taskUpdateTime.enable();
   taskSendTime.enable();
   
    configTime(MYTZ, "pool.ntp.org");
     sntp_servermode_dhcp(0);
     showTime();
 
-  //Async webserver
+    //RTC time 
+  DateTime rtcnow = rtc.now();
+  time_now = rtcnow.unixtime();
+
+  //Async webserver for debugging 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
     {
     request->send(200, "text/html", "<form>Text to Broadcast<br><input type='text' name='BROADCAST'><br><br><input type='submit' value='Submit'></form>");
@@ -290,113 +357,42 @@ mqttClient.setCallback(mqttCallback);
   server.begin();
 
 
-  pinMode(LED_BUILTIN, OUTPUT);
 
- /*
-
-if (!SD.begin(D8)) {
-    ("Could not mount SD card");
-  }
-
-  File dir = SD.open("/");
-  while (true) {
-    File entry = dir.openNextFile();
-    if (!entry) { //End of files
-      ("Could not find valid firmware, please validate and restart");
-    }
-
-    //This block of code parses the file name to make sure it is valid.
-    //It will also get the role and hardware the firmware is targeted at.
-    if (!entry.isDirectory()) {
-      TSTRING name = entry.name();
-      if (name.length() > 1 && name.indexOf('_') != -1 &&
-          name.indexOf('_') != name.lastIndexOf('_') &&
-          name.indexOf('.') != -1) {
-        TSTRING firmware = name.substring(1, name.indexOf('_'));
-        TSTRING hardware =
-            name.substring(name.indexOf('_') + 1, name.lastIndexOf('_'));
-        TSTRING role =
-            name.substring(name.lastIndexOf('_') + 1, name.indexOf('.'));
-        TSTRING extension =
-            name.substring(name.indexOf('.') + 1, name.length());
-        if (firmware.equals("firmware") &&
-            (hardware.equals("ESP8266") || hardware.equals("ESP32")) &&
-            extension.equals("bin")) {
-
-          Serial.println("OTA FIRMWARE FOUND, NOW BROADCASTING");
-
-          //This is the important bit for OTA, up to now was just getting the file. 
-          //If you are using some other way to upload firmware, possibly from 
-          //mqtt or something, this is what needs to be changed.
-          //This function could also be changed to support OTA of multiple files
-          //at the same time, potentially through using the pkg.md5 as a key in
-          //a map to determine which to send
-          mesh.initOTASend(
-              [&entry](painlessmesh::plugin::ota::DataRequest pkg,
-                       char* buffer) {
-                
-                //fill the buffer with the requested data packet from the node.
-                entry.seek(OTA_PART_SIZE * pkg.partNo);
-                entry.readBytes(buffer, OTA_PART_SIZE);
-                
-                //The buffer can hold OTA_PART_SIZE bytes, but the last packet may
-                //not be that long. Return the actual size of the packet.
-                return min((unsigned)OTA_PART_SIZE,
-                           entry.size() - (OTA_PART_SIZE * pkg.partNo));
-              },
-              OTA_PART_SIZE);
-
-          //Calculate the MD5 hash of the firmware we are trying to send. This will be used
-          //to validate the firmware as well as tell if a node needs this firmware.
-          MD5Builder md5;
-          md5.begin();
-          md5.addStream(entry, entry.size());
-          md5.calculate(); 
-
-          //Make it known to the network that there is OTA firmware available.
-          //This will send a message every minute for an hour letting nodes know
-          //that firmware is available.
-          //This returns a task that allows you to do things on disable or more,
-          //like closing your files or whatever.
-          mesh.offerOTA(role, hardware, md5.toString(),
-                        ceil(((float)entry.size()) / OTA_PART_SIZE), false);
-
-        }
-      }
-    }
-  }
-
-
-*/
+ 
 
 }
 
 void loop() {
-  mesh.update();
-  period=millis()/1000; 
+  mesh.update(); // mesh scheduler
+  mqttClient.loop();
+
+
+ if (time_now == 10800){ESP.reset();}
+ //various checks to ensure redunduncy
   if(getlocalIP() == testIP){
     isConnected = false;
 
-  }                                                   // Function "mllis()" gives time in milliseconds. Here "period" will store time in seconds
+  } 
+//for secondary network if it exists
 
-  mqttClient.loop();
-
-if(millis() == 60000 && testIP == getlocalIP()) 
+if(millis() >= 60000 && testIP == getlocalIP()) 
   {
     Serial.print("trying secondary ssid");
     mesh.stationManual(Secondary_SSID, Secondary_PASS);
     Serial.print(mqtt1);
     mqttClient.setServer(mqtt2, 1883);
   }
-
+//for recconecting 
   if (myIP == getlocalIP() &&(mqttClient.connected() == false)) {
+            //taskSendLog.enable();
 
        if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","Ready! Reconnected");
       mqttClient.subscribe("hetadatainMesh/to/gateway");
+      //taskSendLog.enable();
        }
     } 
-
+//  connecting for the first time
   if(myIP != getlocalIP()){
     myIP = getlocalIP();
     Serial.println("My IP is " + myIP.toString());
@@ -404,17 +400,21 @@ if(millis() == 60000 && testIP == getlocalIP())
     if (mqttClient.connect("hetadatainMeshClient")) {
       mqttClient.publish("hetadatainMesh/from/gateway","ready");
       mqttClient.subscribe("hetadatainMesh/to/gateway");
+      taskSetRtc.enableDelayed(1000);
 
     } 
   }
 }
 
-// Publish Received msg from nodes to mqtt broker
+// Publish Received msg from nodes to mqtt broker if connected or save to internal storage
 void receivedCallback( const uint32_t &from, const String &msg ) {
- 
+ Serial.println(msg);
+  
   if(msg == "online?"){
   mesh.sendSingle(from, String("online"));
+
     }
+  
   else{
     if (!mqttClient.connected() || isConnected == false)
     {
@@ -435,9 +435,11 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
   
    if(period >= 600 && testIP == getlocalIP()){
   while(1);
-  }                                   
+  }
+ 
+                                   
 }
-
+//for recieving data from broker
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
 
   char* cleanPayload = (char*)malloc(length+1);
@@ -448,7 +450,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   String targetStr = String(topic).substring(16);
 
       isConnected = true;
-      taskSendLog.enable();
+      //taskSendLog.enable();
 
   if(targetStr == "gateway")
   {
@@ -477,7 +479,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     }
     else
     {
-     mqttClient.publish("hetadatainMesh/from/gateway", "Client not connected!");
+    // mqttClient.publish("hetadatainMesh/from/gateway", "Client not connected!");
     }
  
   
@@ -487,10 +489,8 @@ IPAddress getlocalIP() {
   return IPAddress(mesh.getStationIP());
 }
 
-
+// time machine for maintaining ntp time
 void time_is_set_scheduled() {
-  // everything is allowed in this function
-
   if (time_machine_days == 0) {
     time_machine_running = !time_machine_running;
   }
@@ -520,7 +520,7 @@ void time_is_set_scheduled() {
     showTime();
   }
 }
-
+//check to see if ntp is working 
 void showTime() {
   gettimeofday(&tv, nullptr);
   clock_gettime(0, &tp);
@@ -528,18 +528,7 @@ void showTime() {
   now_ms = millis();
   now_us = micros();
 
-  // time from boot
-  Serial.print("clock:     ");
-  Serial.print((uint32_t)tp.tv_sec);
-  Serial.print("s / ");
-  Serial.print((uint32_t)tp.tv_nsec);
-  Serial.println("ns");
 
-  // time from boot
-  Serial.print("millis:    ");
-  Serial.println(now_ms);
-  Serial.print("micros:    ");
-  Serial.println(now_us);
 
   // EPOCH+tz+dst
   Serial.print("gtod:      ");
@@ -559,26 +548,8 @@ void showTime() {
   Serial.print("ctime:     ");
   Serial.print(ctime(&now));
 
-#if LWIP_VERSION_MAJOR > 1
-
-  // LwIP v2 is able to list more details about the currently configured SNTP servers
-  for (int i = 0; i < SNTP_MAX_SERVERS; i++) {
-    IPAddress sntp = *sntp_getserver(i);
-    const char* name = sntp_getservername(i);
-    if (sntp.isSet()) {
-      Serial.printf("sntp%d:     ", i);
-      if (name) {
-        Serial.printf("%s (%s) ", name, sntp.toString().c_str());
-      } else {
-        Serial.printf("%s ", sntp.toString().c_str());
-      }
-      Serial.printf("IPv6: %s Reachability: %o\n",
-                    sntp.isV6() ? "Yes" : "No",
-                    sntp_getreachability(i));
-    }
-  }
-#endif
 
   Serial.println();
 }
 
+ 
